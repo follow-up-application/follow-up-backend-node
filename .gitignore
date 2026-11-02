@@ -6,7 +6,7 @@ coverage/
 .env.local
 *.log
 tmp/
-storage/
+/storage/
 .DS_Store
 
 ESTADO-MIGRACION.md

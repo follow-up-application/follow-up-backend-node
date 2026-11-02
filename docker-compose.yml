@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: follow
+      POSTGRES_PASSWORD: follow
+      POSTGRES_DB: follow
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U follow -d follow']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://follow:follow@db:5432/follow
+      DATABASE_TEST_URL: postgres://follow:follow@db:5432/follow_test
+      JWT_SECRET: local-docker-secret-change-me-32-characters-min
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      INTERNAL_METRICS_TOKEN: local-metrics-token
+      IMPORT_STORAGE_DIR: /app/storage/imports
+    ports:
+      - '3000:3000'
+    volumes:
+      - importstorage:/app/storage/imports
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:3000/ready || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  pgdata:
+  importstorage:

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.test
+.env.local
+*.log
+tmp/
+storage/
+.DS_Store
+
+ESTADO-MIGRACION.md
+PLAN-MIGRACION-EXPRESS-revisado.md

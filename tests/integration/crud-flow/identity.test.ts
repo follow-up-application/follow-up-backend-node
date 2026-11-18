@@ -1,7 +1,9 @@
 import type { Express } from 'express';
 import { randomUUID } from 'node:crypto';
+import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { query } from '../../../src/infra/db/client.js';
+import { login } from '../../helpers/http.js';
 import {
   authed,
   createAlumnoFixture,
@@ -330,5 +332,49 @@ describe('CRUD de identidad', () => {
       preceptorId,
     ]);
     expect(state.rows[0]?.is_active).toBe(false);
+  });
+
+  it('devuelve 401, 403, 409 y 422 en el flujo de identidad', async () => {
+    const sinToken = await request(app).get('/api/v1/alumnos?limit=1&offset=0');
+    expect(sinToken.status).toBe(401);
+    expect(sinToken.body.error.code).toBe('UNAUTHENTICATED');
+
+    const curso = await createCourseFixture(app, adminToken);
+    const docenteToken = await login(app, 'docente', '10.73.0.2');
+    const sinPermiso = await write(app, docenteToken, 'post', '/api/v1/alumnos', {
+      first_name: 'Alumno',
+      last_name: 'NoAutorizado',
+      dni: randomDni(),
+      fecha_nacimiento: '2011-06-01',
+      curso_division_turno_id: curso.id,
+      relationship: 'madre',
+      tutor_first_name: 'Tutor',
+      tutor_last_name: 'NoAutorizado',
+      tutor_dni: randomDni(),
+      tutor_telephone: '3815550000',
+    });
+    expect(sinPermiso.status).toBe(403);
+    expect(sinPermiso.body.error.code).toBe('FORBIDDEN');
+
+    const duplicado = await write(app, adminToken, 'post', '/api/v1/docentes', {
+      first_name: 'Docente',
+      last_name: 'Duplicado',
+      dni: 30222333,
+      telephone: '3815550001',
+      fecha_ingreso: '2024-03-01',
+    });
+    expect(duplicado.status).toBe(409);
+    expect(duplicado.body.error.code).toBe('DUPLICATE_RESOURCE');
+
+    const invalido = await write(app, adminToken, 'post', '/api/v1/alumnos', {
+      first_name: 'Alumno',
+      last_name: 'Invalido',
+      dni: randomDni(),
+      fecha_nacimiento: '2011-06-01',
+      curso_division_turno_id: curso.id,
+      relationship: 'invalido',
+    });
+    expect(invalido.status).toBe(422);
+    expect(invalido.body.error.code).toBe('VALIDATION_ERROR');
   });
 });

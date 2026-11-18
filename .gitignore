@@ -9,7 +9,4 @@ tmp/
 /storage/
 .DS_Store
 
-ESTADO-MIGRACION.md
-PLAN-MIGRACION-EXPRESS-revisado.md
-GUIA-API-REPORTES-DJANGO.md
-TAREAS-TRELLO.md
+docs/guides

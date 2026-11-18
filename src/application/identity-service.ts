@@ -146,6 +146,11 @@ export class IdentityService {
   ): Promise<User> {
     requireRole(ctx.actor, 'administrador');
     const user = await this.getAdmin(id);
+    const before = {
+      first_name: user.firstName,
+      last_name: user.lastName,
+      username: user.username,
+    };
     if (input.username !== undefined) {
       validateUsername(input.username);
       await this.assertUsernameAvailable(input.username, id);
@@ -161,6 +166,7 @@ export class IdentityService {
         entidadId: id,
         accion: 'actualizar',
         actor: ctx.actor,
+        antes: before,
         despues: { first_name: user.firstName, last_name: user.lastName, username: user.username },
         requestId: ctx.requestId,
       });
@@ -435,6 +441,13 @@ export class IdentityService {
     if (!alumno) throw new NotFoundError('Alumno');
     assertVersion(alumno.version, input.version);
     const user = alumno.user;
+    const before = {
+      first_name: user.firstName,
+      last_name: user.lastName,
+      dni: user.dni,
+      fecha_nacimiento: alumno.fechaNacimiento,
+      curso_division_turno_id: alumno.cursoDivisionTurnoId,
+    };
     if (input.dni !== undefined) {
       const dni = validateDni(input.dni);
       await this.assertDniAvailable(dni, id);
@@ -465,6 +478,7 @@ export class IdentityService {
         entidadId: id,
         accion: 'actualizar',
         actor: ctx.actor,
+        antes: before,
         despues: {
           first_name: user.firstName,
           last_name: user.lastName,
@@ -587,6 +601,13 @@ export class IdentityService {
     if (!docente) throw new NotFoundError('Docente');
     assertVersion(docente.version, input.version);
     const user = docente.user;
+    const before = {
+      first_name: user.firstName,
+      last_name: user.lastName,
+      telephone: docente.telephone,
+      fecha_ingreso: docente.fechaIngreso,
+      curso_division_turno_id: docente.cursoDivisionTurnoId,
+    };
     if (input.first_name !== undefined || input.last_name !== undefined) {
       user.rename(input.first_name ?? user.firstName, input.last_name ?? user.lastName);
     }
@@ -611,6 +632,7 @@ export class IdentityService {
         entidadId: id,
         accion: 'actualizar',
         actor: ctx.actor,
+        antes: before,
         despues: {
           first_name: user.firstName,
           last_name: user.lastName,
@@ -780,6 +802,7 @@ export class IdentityService {
       throw new ForbiddenError('Solo un administrador puede cambiar el email.');
     }
     assertVersion(tutor.version, input.version);
+    const before = { telephone: tutor.telephone, email: tutor.user.email };
     if (input.telephone !== undefined) tutor.changePhone(input.telephone);
     if (input.email !== undefined) {
       const email = normalizeEmail(input.email);
@@ -795,6 +818,7 @@ export class IdentityService {
         entidadId: id,
         accion: 'actualizar',
         actor,
+        antes: before,
         despues: { telephone: tutor.telephone, email: tutor.user.email },
         requestId: null,
       });
@@ -937,6 +961,10 @@ export class IdentityService {
     const preceptor = await this.c.preceptores.findById(id);
     if (!preceptor) throw new NotFoundError('Preceptor');
     assertVersion(preceptor.version, input.version);
+    const before = {
+      telephone: preceptor.telephone,
+      employee_code: preceptor.employeeCode,
+    };
     const updated = Preceptor.reconstitute({
       user: preceptor.user,
       telephone: input.telephone !== undefined ? input.telephone : preceptor.telephone,
@@ -951,6 +979,7 @@ export class IdentityService {
         entidadId: id,
         accion: 'actualizar',
         actor: ctx.actor,
+        antes: before,
         despues: { telephone: updated.telephone, employee_code: updated.employeeCode },
         requestId: ctx.requestId,
       });

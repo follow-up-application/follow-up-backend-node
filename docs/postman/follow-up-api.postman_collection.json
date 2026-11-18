@@ -1,0 +1,1573 @@
+{
+  "info": {
+    "name": "Follow App - Backend Node API",
+    "description": "Colección completa de la API Node (Express) de Follow App.\n\nUso:\n1) Ejecutar primero 'Autenticación / Login' para guardar access_token y refresh_token en las variables de la colección.\n2) Las rutas bajo /api/v1 usan Bearer {{accessToken}} salvo login, refresh, validarCodigo y register.\n3) El script de pre-request genera automáticamente un Idempotency-Key UUID en POST/PUT/PATCH/DELETE.\n4) Los endpoints crean y guardan ids en variables (alumnoId, cursoId, periodoId, etc.) para reutilizarlos en los siguientes requests.\n5) Los endpoints operativos (/health, /ready, /internal/metrics) no llevan el prefijo /api/v1.\n\nAlias disponibles en el servidor: POST /api/v1/login, POST /api/v1/logout y los prefijos /api/v1/cursos y /api/v1/cursoDivisionTurno son equivalentes.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const method = pm.request.method.toUpperCase();",
+          "if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !pm.request.headers.get('Idempotency-Key')) {",
+          "  const key = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {",
+          "    const r = Math.floor(Math.random() * 16);",
+          "    const v = c === 'x' ? r : ((r & 0x3) | 0x8);",
+          "    return v.toString(16);",
+          "  });",
+          "  pm.request.headers.upsert({ key: 'Idempotency-Key', value: key });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "internalMetricsToken", "value": "local-metrics-token" },
+    { "key": "loginUsername", "value": "admin" },
+    { "key": "loginPassword", "value": "Admin1234!" },
+    { "key": "userId", "value": "" },
+    { "key": "adminId", "value": "" },
+    { "key": "alumnoId", "value": "" },
+    { "key": "docenteId", "value": "" },
+    { "key": "tutorId", "value": "" },
+    { "key": "tutorAlumnoId", "value": "" },
+    { "key": "tutorCodigo", "value": "" },
+    { "key": "tutorDni", "value": "30111222" },
+    { "key": "preceptorId", "value": "" },
+    { "key": "cicloLectivoId", "value": "" },
+    { "key": "cursoId", "value": "1" },
+    { "key": "materiaId", "value": "1" },
+    { "key": "claseId", "value": "" },
+    { "key": "asistenciaId", "value": "" },
+    { "key": "periodoId", "value": "" },
+    { "key": "instanciaId", "value": "" },
+    { "key": "calificacionId", "value": "" },
+    { "key": "inscripcionId", "value": "" },
+    { "key": "importJobId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "00 - Operativos",
+      "description": "Endpoints sin prefijo /api/v1. /internal/metrics requiere loopback o el header X-Internal-Token.",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Devuelve { status: 'ok' }."
+          },
+          "response": []
+        },
+        {
+          "name": "Ready",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/ready",
+            "description": "Verifica conexión a PostgreSQL y migraciones aplicadas."
+          },
+          "response": []
+        },
+        {
+          "name": "Métricas internas",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Internal-Token", "value": "{{internalMetricsToken}}" }
+            ],
+            "url": "{{baseUrl}}/internal/metrics"
+          },
+          "response": []
+        },
+        {
+          "name": "Resetear métricas internas",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Internal-Token", "value": "{{internalMetricsToken}}" }
+            ],
+            "url": "{{baseUrl}}/internal/metrics/reset"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 - Autenticación y sesión",
+      "item": [
+        {
+          "name": "Login",
+          "auth": { "type": "noauth" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.access_token) pm.collectionVariables.set('accessToken', data.access_token);",
+                  "  if (data.refresh_token) pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{loginUsername}}\",\n  \"password\": \"{{loginPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "Público. Alias: POST /api/v1/login. Usuarios seed: admin/Admin1234!, preceptor/docente/alumno con username PRE-, DOC-, EST- + DNI y contraseña igual al DNI."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh token",
+          "auth": { "type": "noauth" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.access_token) pm.collectionVariables.set('accessToken', data.access_token);",
+                  "  if (data.refresh_token) pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/refresh",
+            "description": "Público. Rota el refresh token; actualiza las variables de la colección."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/logout",
+            "description": "Requiere Bearer. Responde 204. Alias: POST /api/v1/logout. El body es opcional."
+          },
+          "response": []
+        },
+        {
+          "name": "Mi sesión (/me)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/me",
+            "description": "Devuelve user, perfiles y cursos del usuario autenticado."
+          },
+          "response": []
+        },
+        {
+          "name": "Cambiar contraseña",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"30111222\",\n  \"new_password\": \"NuevaClave123!\",\n  \"new_password_confirmation\": \"NuevaClave123!\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/password",
+            "description": "Requiere Bearer. Obligatorio si must_change_password está en true; en ese estado solo se permiten /me, /password y logout."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Identidad",
+      "item": [
+        {
+          "name": "Usuarios",
+          "item": [
+            {
+              "name": "Listar usuarios",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/users?role=administrador&active=true&limit=50&offset=0",
+                "description": "Solo administrador. role: administrador|preceptor|docente|alumno|tutor. active: true|false|1|0."
+              },
+              "response": []
+            },
+            {
+              "name": "Activar/desactivar usuario",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"is_active\": false,\n  \"motivo\": \"Baja temporal\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/users/{{userId}}/estado",
+                "description": "Solo administrador. El motivo es obligatorio (1-500 caracteres)."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Administradores",
+          "item": [
+            {
+              "name": "Crear administrador",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) { pm.collectionVariables.set('adminId', data.id); pm.collectionVariables.set('userId', data.id); }",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_name\": \"Ana\",\n  \"last_name\": \"Gómez\",\n  \"username\": \"admin.ana\",\n  \"password\": \"Admin1234!\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/admins",
+                "description": "Requiere Idempotency-Key (la genera el script de la colección)."
+              },
+              "response": []
+            },
+            {
+              "name": "Listar administradores",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/admins?limit=50&offset=0"
+              },
+              "response": []
+            },
+            {
+              "name": "Estadísticas de administradores",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/admins/estadisticas"
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener administrador",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/admins/{{adminId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar administrador",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_name\": \"Ana\",\n  \"last_name\": \"Gómez\",\n  \"username\": \"admin.ana\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/admins/{{adminId}}",
+                "description": "Todos los campos son opcionales, pero el body no puede tener claves desconocidas."
+              },
+              "response": []
+            },
+            {
+              "name": "Desactivar administrador",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"motivo\": \"Reemplazo de personal\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/admins/{{adminId}}",
+                "description": "Baja lógica. Responde 204."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Alumnos",
+          "item": [
+            {
+              "name": "Listar alumnos",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/alumnos?curso_division_turno_id=1&limit=50&offset=0",
+                "description": "El filtro por curso depende del rol del actor."
+              },
+              "response": []
+            },
+            {
+              "name": "Crear alumno",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('alumnoId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_name\": \"Juan\",\n  \"last_name\": \"Pérez\",\n  \"dni\": 40555555,\n  \"fecha_nacimiento\": \"2011-05-12\",\n  \"curso_division_turno_id\": 1,\n  \"relationship\": \"padre\",\n  \"tutor_id\": null,\n  \"tutor_first_name\": \"Carlos\",\n  \"tutor_last_name\": \"Pérez\",\n  \"tutor_dni\": 30123456,\n  \"tutor_telephone\": \"3815551234\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/alumnos",
+                "description": "Requiere Idempotency-Key. relationship: padre|madre|otra (si otra, enviar otra_relacion)."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener alumno",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/alumnos/{{alumnoId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar alumno",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_name\": \"Juan\",\n  \"last_name\": \"Pérez\",\n  \"curso_division_turno_id\": 1,\n  \"version\": 1\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/alumnos/{{alumnoId}}",
+                "description": "Enviar version para control optimista de concurrencia."
+              },
+              "response": []
+            },
+            {
+              "name": "Dar de baja alumno",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"motivo\": \"Traslado a otra institución\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/alumnos/{{alumnoId}}",
+                "description": "Baja lógica. Responde 204."
+              },
+              "response": []
+            },
+            {
+              "name": "Inscripciones del alumno",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/alumnos/{{alumnoId}}/inscripciones?materia_id=1&estado=aprobado&limit=50&offset=0"
+              },
+              "response": []
+            },
+            {
+              "name": "Condición del alumno",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/alumnos/{{alumnoId}}/condicion?periodo_id={{periodoId}}",
+                "description": "periodo_id es obligatorio. Base: /api/v1/alumnos/:id/condicion."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Docentes",
+          "item": [
+            {
+              "name": "Listar docentes",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/docentes?curso_division_turno_id=1&limit=50&offset=0"
+              },
+              "response": []
+            },
+            {
+              "name": "Crear docente",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('docenteId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_name\": \"María\",\n  \"last_name\": \"López\",\n  \"dni\": 30222333,\n  \"telephone\": \"3815552222\",\n  \"fecha_ingreso\": \"2024-03-01\",\n  \"curso_division_turno_id\": 1\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/docentes",
+                "description": "Requiere Idempotency-Key. curso_division_turno_id es opcional (null permitido)."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener docente",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/docentes/{{docenteId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar docente",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"telephone\": \"3815559999\",\n  \"version\": 1\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/docentes/{{docenteId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Dar de baja docente",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"motivo\": \"Renuncia\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/docentes/{{docenteId}}",
+                "description": "Responde 204."
+              },
+              "response": []
+            },
+            {
+              "name": "Materias del docente",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/docentes/{{docenteId}}/materias"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Tutores",
+          "item": [
+            {
+          "name": "Validar código de tutor (público)",
+          "auth": { "type": "noauth" },
+          "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/tutores/validarCodigo/{{tutorCodigo}}"
+              },
+              "response": []
+            },
+            {
+          "name": "Registrar tutor con código (público)",
+          "auth": { "type": "noauth" },
+          "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"codigo\": \"{{tutorCodigo}}\",\n  \"email\": \"laura@example.com\",\n  \"password\": \"Tutor1234!\",\n  \"password_confirmation\": \"Tutor1234!\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/tutores/register",
+                "description": "Público pero requiere Idempotency-Key. La clave se scopea por el código enviado."
+              },
+              "response": []
+            },
+            {
+              "name": "Listar tutores",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/tutores?limit=50&offset=0",
+                "description": "Solo administrador."
+              },
+              "response": []
+            },
+            {
+              "name": "Crear tutor",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('tutorId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_name\": \"Laura\",\n  \"last_name\": \"Pérez\",\n  \"dni\": 30111222,\n  \"telephone\": \"3815553333\",\n  \"email\": \"laura@example.com\",\n  \"password\": \"Tutor1234!\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/tutores",
+                "description": "Requiere Idempotency-Key."
+              },
+              "response": []
+            },
+            {
+              "name": "Buscar tutor por DNI",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/tutores/dni/{{tutorDni}}",
+                "description": "Solo administrador."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener tutor",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/tutores/{{tutorId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar tutor",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"telephone\": \"3815554444\",\n  \"email\": \"laura@example.com\",\n  \"version\": 1\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/tutores/{{tutorId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Dar de baja tutor",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"motivo\": \"Solicitud del tutor\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/tutores/{{tutorId}}",
+                "description": "Responde 204."
+              },
+              "response": []
+            },
+            {
+              "name": "Alumnos del tutor",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/tutores/{{tutorId}}/alumnos"
+              },
+              "response": []
+            },
+            {
+              "name": "Desactivar vínculo tutor-alumno",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/tutor-alumno/{{tutorAlumnoId}}",
+                "description": "Responde 204. El id del vínculo viene en las respuestas de alumnos/tutores."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Preceptores",
+          "item": [
+            {
+              "name": "Listar preceptores",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/preceptores?curso_division_turno_id=1&limit=50&offset=0",
+                "description": "Solo administrador."
+              },
+              "response": []
+            },
+            {
+              "name": "Crear preceptor",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('preceptorId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"first_name\": \"Pedro\",\n  \"last_name\": \"Ruiz\",\n  \"dni\": 30444555,\n  \"telephone\": \"3815556666\",\n  \"employee_code\": \"PRE-004\",\n  \"cursos\": [1, 2]\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/preceptores",
+                "description": "Requiere Idempotency-Key. cursos es opcional, máximo 50 ids."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener preceptor",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/preceptores/{{preceptorId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Reemplazar cursos del preceptor",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cursos\": [1, 2, 3]\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/preceptores/{{preceptorId}}/cursos",
+                "description": "Requiere Idempotency-Key. Reemplaza la asignación completa."
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar preceptor",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"telephone\": \"3815557777\",\n  \"employee_code\": \"PRE-004\",\n  \"version\": 1\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/preceptores/{{preceptorId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Dar de baja preceptor",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"motivo\": \"Reorganización\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/preceptores/{{preceptorId}}",
+                "description": "Responde 204."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 - Académico",
+      "item": [
+        {
+          "name": "Cursos / Divisiones / Turnos",
+          "description": "Los mismos handlers están montados en /api/v1/cursos y /api/v1/cursoDivisionTurno.",
+          "item": [
+            {
+              "name": "Listar cursos",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/cursos?ciclo_lectivo_id={{cicloLectivoId}}&limit=50&offset=0"
+              },
+              "response": []
+            },
+            {
+              "name": "Listar cursos (alias /cursoDivisionTurno)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/cursoDivisionTurno?ciclo_lectivo_id={{cicloLectivoId}}&limit=50&offset=0"
+              },
+              "response": []
+            },
+            {
+              "name": "Crear curso",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('cursoId', data.id);",
+                      "  if (data.ciclo_lectivo_id) pm.collectionVariables.set('cicloLectivoId', data.ciclo_lectivo_id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"ciclo_lectivo_id\": \"{{cicloLectivoId}}\",\n  \"curso\": 1,\n  \"division\": \"A\",\n  \"turno\": \"Mañana\",\n  \"capacidad_maxima\": 30\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/cursos",
+                "description": "Requiere Idempotency-Key. turno: Mañana|Tarde. division: una letra mayúscula."
+              },
+              "response": []
+            },
+            {
+              "name": "Alumnos del curso",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/cursos/{{cursoId}}/alumnos"
+              },
+              "response": []
+            },
+            {
+              "name": "Materias del curso",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/cursos/{{cursoId}}/materias"
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener curso",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/cursos/{{cursoId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar curso",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"division\": \"A\",\n  \"turno\": \"Mañana\",\n  \"capacidad_maxima\": 35,\n  \"version\": 1\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/cursos/{{cursoId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Eliminar curso",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/cursos/{{cursoId}}",
+                "description": "Responde 204."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Materias",
+          "item": [
+            {
+              "name": "Listar materias",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/materias?curso_division_turno_id=1&docente_id={{docenteId}}&limit=50&offset=0"
+              },
+              "response": []
+            },
+            {
+              "name": "Crear materia",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('materiaId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"nombre\": \"Matemática\",\n  \"descripcion\": \"Álgebra y geometría\",\n  \"curso_division_turno_id\": 1,\n  \"docente_id\": \"{{docenteId}}\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/materias",
+                "description": "Requiere Idempotency-Key."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener materia",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/materias/{{materiaId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar materia",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"nombre\": \"Matemática\",\n  \"descripcion\": \"Álgebra, geometría y trigonometría\",\n  \"version\": 1\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/materias/{{materiaId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Eliminar materia",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/materias/{{materiaId}}",
+                "description": "Responde 204."
+              },
+              "response": []
+            },
+            {
+              "name": "Inscripciones de la materia",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/materias/{{materiaId}}/inscripciones?estado=aprobado"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Inscripciones",
+          "item": [
+            {
+              "name": "Listar inscripciones",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/inscripciones?alumno_id={{alumnoId}}&materia_id={{materiaId}}&estado=aprobado&limit=50&offset=0",
+                "description": "estado: pendiente|aprobado|rechazado|cancelado."
+              },
+              "response": []
+            },
+            {
+              "name": "Crear inscripción",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('inscripcionId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"alumno_id\": \"{{alumnoId}}\",\n  \"materia_id\": 1,\n  \"fecha_inscripcion\": \"2026-03-01\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/inscripciones",
+                "description": "Requiere Idempotency-Key. fecha_inscripcion es opcional."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener inscripción",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/inscripciones/{{inscripcionId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Cambiar estado de inscripción",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"estado\": \"aprobado\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/inscripciones/{{inscripcionId}}/estado"
+              },
+              "response": []
+            },
+            {
+              "name": "Eliminar inscripción",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/inscripciones/{{inscripcionId}}",
+                "description": "Responde 204."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Clases",
+          "item": [
+            {
+              "name": "Listar clases",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/clases?materia_id={{materiaId}}&curso_division_turno_id=1&desde=2026-03-01&hasta=2026-12-31&limit=50&offset=0"
+              },
+              "response": []
+            },
+            {
+              "name": "Crear clase",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('claseId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"materia_id\": 1,\n  \"fecha\": \"2026-03-02\",\n  \"hora_inicio\": \"08:00\",\n  \"hora_fin\": \"09:30\",\n  \"tema\": \"Introducción al álgebra\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/clases",
+                "description": "Requiere Idempotency-Key. hora_fin debe ser mayor que hora_inicio."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener clase",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/clases/{{claseId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar clase",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tema\": \"Ecuaciones lineales\",\n  \"estado\": \"dictada\",\n  \"version\": 1\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/clases/{{claseId}}",
+                "description": "estado: programada|dictada|cancelada."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 - Asistencia",
+      "item": [
+        {
+          "name": "Listar asistencias por clase",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/asistencias?clase_id={{claseId}}&limit=50&offset=0",
+            "description": "Con clase_id devuelve { clase, alumnos: [{ alumno, asistencia }] }."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar asistencias por alumno y periodo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/asistencias?alumno_id={{alumnoId}}&periodo_id={{periodoId}}",
+            "description": "Si se envían alumno_id y periodo_id juntos, devuelve el listado filtrado por periodo."
+          },
+          "response": []
+        },
+        {
+          "name": "Registrar asistencia",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('asistenciaId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clase_id\": \"{{claseId}}\",\n  \"alumno_id\": \"{{alumnoId}}\",\n  \"estado\": \"presente\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/asistencias",
+            "description": "Requiere Idempotency-Key. estado: presente|ausente|justificada|tarde."
+          },
+          "response": []
+        },
+        {
+          "name": "Justificar asistencia",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"justificacion\": \"Presentó certificado médico\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/asistencias/{{asistenciaId}}/justificacion",
+            "description": "Cambia el estado a justificada y registra auditoría."
+          },
+          "response": []
+        },
+        {
+          "name": "Actualizar asistencia",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"ausente\",\n  \"motivo\": \"Corrección de registro\",\n  \"version\": 1\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/asistencias/{{asistenciaId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 - Calificaciones y condiciones",
+      "item": [
+        {
+          "name": "Períodos",
+          "item": [
+            {
+              "name": "Listar períodos",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/periodos?ciclo_lectivo_id={{cicloLectivoId}}&estado=abierto&limit=50&offset=0",
+                "description": "estado: abierto|cerrado."
+              },
+              "response": []
+            },
+            {
+              "name": "Crear período",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('periodoId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"ciclo_lectivo_id\": \"{{cicloLectivoId}}\",\n  \"nombre\": \"Primer trimestre\",\n  \"tipo\": \"trimestre\",\n  \"fecha_inicio\": \"2026-03-01\",\n  \"fecha_fin\": \"2026-06-30\",\n  \"regla_default\": {\n    \"asistencia_minima_pct\": 75,\n    \"nota_minima_regular\": 4,\n    \"nota_minima_promocion\": 7,\n    \"condicion_sin_datos\": \"libre\"\n  }\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/periodos",
+                "description": "Requiere Idempotency-Key. tipo: trimestre|cuatrimestre."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener período",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/periodos/{{periodoId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar período",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"nombre\": \"Primer trimestre\",\n  \"fecha_inicio\": \"2026-03-01\",\n  \"fecha_fin\": \"2026-06-30\",\n  \"version\": 1\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/periodos/{{periodoId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Cerrar período",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                },
+                "url": "{{baseUrl}}/api/v1/periodos/{{periodoId}}/cerrar",
+                "description": "Requiere Idempotency-Key. Calcula y persiste condiciones_alumno. Devuelve { cierre, condiciones }."
+              },
+              "response": []
+            },
+            {
+              "name": "Condiciones del período",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/periodos/{{periodoId}}/condiciones?materia_id=1&limit=50&offset=0"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Instancias de evaluación",
+          "item": [
+            {
+              "name": "Listar instancias",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/instancias-evaluacion?materia_id={{materiaId}}&periodo_id={{periodoId}}&limit=50&offset=0"
+              },
+              "response": []
+            },
+            {
+              "name": "Crear instancia",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('instanciaId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"materia_id\": 1,\n  \"periodo_id\": \"{{periodoId}}\",\n  \"nombre\": \"Primer parcial\",\n  \"tipo\": \"parcial\",\n  \"peso\": \"40\",\n  \"fecha\": \"2026-04-15\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/instancias-evaluacion",
+                "description": "Requiere Idempotency-Key. tipo: parcial|tp|oral|recuperatorio|otro. peso: 0 < peso <= 100."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener instancia",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/instancias-evaluacion/{{instanciaId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar instancia",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"nombre\": \"Primer parcial\",\n  \"peso\": \"45\",\n  \"version\": 1\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/instancias-evaluacion/{{instanciaId}}"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Calificaciones",
+          "item": [
+            {
+              "name": "Listar calificaciones",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/calificaciones?instancia_id={{instanciaId}}&alumno_id={{alumnoId}}&periodo_id={{periodoId}}&materia_id={{materiaId}}&limit=50&offset=0"
+              },
+              "response": []
+            },
+            {
+              "name": "Cargar calificación",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('calificacionId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"instancia_id\": \"{{instanciaId}}\",\n  \"alumno_id\": \"{{alumnoId}}\",\n  \"valor\": \"8.50\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/calificaciones",
+                "description": "Requiere Idempotency-Key. valor: 0 a 10."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener calificación",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/calificaciones/{{calificacionId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar calificación",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"valor\": \"9.00\",\n  \"version\": 1,\n  \"motivo\": \"Corrección de carga\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/calificaciones/{{calificacionId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Anular calificación",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"motivo\": \"Error en la carga original\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/calificaciones/{{calificacionId}}/anular",
+                "description": "Requiere Idempotency-Key."
+              },
+              "response": []
+            },
+            {
+              "name": "Historial de calificación",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/calificaciones/{{calificacionId}}/historial",
+                "description": "Devuelve registros de auditoría de la calificación."
+              },
+              "response": []
+            },
+            {
+              "name": "Rectificar calificación",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"valor\": \"9.50\",\n  \"motivo\": \"Reclamo de calificación aprobado\"\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/calificaciones/{{calificacionId}}/rectificar",
+                "description": "Requiere Idempotency-Key. Crea un registro con estado rectificada."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 - Importación CSV",
+      "item": [
+        {
+          "name": "Importar alumnos desde CSV",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('importJobId', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "CSV de alumnos. También se acepta text/csv crudo como body."
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/api/v1/imports/alumnos",
+            "description": "Solo administrador. Requiere Idempotency-Key. Rate limit propio (IMPORT_RATE_LIMIT_MAX). Responde 202 con el job."
+          },
+          "response": []
+        },
+        {
+          "name": "Estado del job de importación",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/imports/{{importJobId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Errores del job de importación",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/imports/{{importJobId}}/errores?limit=50&offset=0"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 - Auditoría",
+      "item": [
+        {
+          "name": "Listar auditoría",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auditoria?entidad=calificaciones&entidad_id={{calificacionId}}&limit=50&offset=0",
+            "description": "entidad y entidad_id son opcionales. El registro de auditoría es append-only."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

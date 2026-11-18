@@ -629,7 +629,10 @@ export class ImportWorker {
 
       for (const row of rows) {
         const payload = row.payload;
-        if (usersByDni.has(payload.dni) || usersByDni.has(payload.tutor_dni)) {
+        if (
+          usersByDni.has(payload.dni) ||
+          (usersByDni.has(payload.tutor_dni) && !tutorsByDni.has(payload.tutor_dni))
+        ) {
           throw new Error('Un DNI del archivo ya fue registrado durante la importación.');
         }
         const course = validation.coursesByKey.get(

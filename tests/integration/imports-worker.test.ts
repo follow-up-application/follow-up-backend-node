@@ -243,6 +243,77 @@ describe('worker de importación de alumnos', () => {
     await waitUntil(() => !existsSync(String(stored.rows[0]?.storage_path)));
   });
 
+  it('reutiliza un tutor existente por DNI en una importación CSV', async () => {
+    const row = makeRow();
+    let tutorDni = uniqueDni();
+    while (tutorDni === row.dni) tutorDni = uniqueDni();
+
+    const createdTutor = await request(app)
+      .post('/api/v1/tutores')
+      .set('authorization', `Bearer ${adminToken}`)
+      .set('idempotency-key', randomUUID())
+      .send({
+        first_name: 'Tutor',
+        last_name: 'Existente',
+        dni: tutorDni,
+        telephone: '3415559999',
+        email: `tutor.${tutorDni}@example.com`,
+        password: 'Tutor1234!',
+      });
+    expect(createdTutor.status).toBe(201);
+    const tutorId = String(createdTutor.body.id);
+
+    const csv = toCsv([
+      {
+        ...row,
+        tutorDni,
+        tutorFirstName: 'Otro',
+        tutorLastName: 'NoDeberiaCrearse',
+        tutorTelephone: '3415550000',
+      },
+    ]);
+
+    const response = await startImport(csv);
+    expect(response.status).toBe(202);
+    const job = await waitForJob(response.body.id);
+    expect(job).toMatchObject({
+      estado: 'completada',
+      total_rows: 1,
+      valid_rows: 1,
+      error_rows: 0,
+    });
+
+    const alumno = await query<{ id: string }>(
+      'SELECT id FROM users WHERE dni = $1 AND role = $2',
+      [row.dni, 'alumno'],
+    );
+    expect(alumno.rowCount).toBe(1);
+
+    const tutor = await query<{ id: string; first_name: string; telephone: string }>(
+      `SELECT u.id, u.first_name, t.telephone
+         FROM users u JOIN tutores t ON t.id = u.id
+        WHERE u.dni = $1`,
+      [tutorDni],
+    );
+    expect(tutor.rows[0]).toMatchObject({
+      id: tutorId,
+      first_name: 'Tutor',
+      telephone: '3415559999',
+    });
+
+    const tutorsCount = await query<{ total: number }>(
+      'SELECT count(*)::int AS total FROM users WHERE dni = $1',
+      [tutorDni],
+    );
+    expect(tutorsCount.rows[0]?.total).toBe(1);
+
+    const link = await query<{ total: number }>(
+      'SELECT count(*)::int AS total FROM tutor_alumno WHERE alumno_id = $1 AND tutor_id = $2',
+      [alumno.rows[0]?.id, tutorId],
+    );
+    expect(link.rows[0]?.total).toBe(1);
+  });
+
   it('falla el archivo completo y no inserta nada si una fila es inválida', async () => {
     const valid = makeRow();
     const invalid = { ...makeRow(), lastName: '' };

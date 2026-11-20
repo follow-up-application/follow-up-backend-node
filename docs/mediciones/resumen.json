@@ -1,0 +1,130 @@
+{
+  "generado": "2026-11-20",
+  "proyecto": "follow-up-backend-node",
+  "entorno": {
+    "host": {
+      "so": "Microsoft Windows 11 Home Single Language",
+      "version": "10.0.26200",
+      "build": "26200",
+      "arquitectura": "64 bits",
+      "cpu": "Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz",
+      "nucleos": 4,
+      "hilos_logicos": 8,
+      "ram_bytes": 25544347648,
+      "ram_gb": 23.8,
+      "shell": "PowerShell 5.1"
+    },
+    "docker": "29.8.0",
+    "docker_compose": "v5.5.1",
+    "node_host": "v24.14.1",
+    "node_contenedor": "v22.23.5",
+    "postgresql": "PostgreSQL 16.15 on x86_64-pc-linux-musl",
+    "config_medicion": {
+      "DB_POOL_MAX": 60,
+      "IMPORT_HEARTBEAT_SECONDS": 120,
+      "IMPORT_LEASE_SECONDS": 600
+    }
+  },
+  "health": {
+    "url": "http://localhost:3000/health",
+    "herramienta": "autocannon",
+    "conexiones": 20,
+    "duracion_s": 10,
+    "corridas_calientes_rps": [1520.1, 1389.5, 1323.7],
+    "mediana": {
+      "rps": 1389.5,
+      "p50_ms": 12,
+      "p95_ms": 26,
+      "p99_ms": 45,
+      "errores": 0,
+      "timeouts": 0
+    }
+  },
+  "importaciones": {
+    "worker_5000": {
+      "job_id": "9ee7bc4d-fbac-4bc9-b461-50e5eda27933",
+      "estado": "completada",
+      "total_rows": 5000,
+      "valid_rows": 5000,
+      "error_rows": 0,
+      "elapsed_ms": 111935,
+      "rows_per_second": 45
+    },
+    "naive_5000": {
+      "version": "naive",
+      "rows": 5000,
+      "parse_validate_ms": 252,
+      "insert_ms": 25510,
+      "total_ms": 25762,
+      "rows_per_second": 194,
+      "rss_mb": 86,
+      "curso": "3",
+      "ciclo": "22222222-2222-4222-8222-222222222222"
+    },
+    "worker_20000": {
+      "job_id": "6ff60856-7f04-46b7-bda9-c19f259bddad",
+      "estado": "completada",
+      "total_rows": 20000,
+      "valid_rows": 20000,
+      "error_rows": 0,
+      "elapsed_ms": 445853,
+      "rows_per_second": 45,
+      "cursos": 156
+    },
+    "intento_fallido_20000": {
+      "job_id": "51b5fdd4-4fd3-4bd1-b8c0-e53116946d34",
+      "estado": "fallida",
+      "valid_rows": 19999,
+      "error_rows": 1,
+      "error_code": "IMPORT_FAILED",
+      "detalle": {
+        "row_number": 2,
+        "column_name": "dni",
+        "code": "DNI_IN_USE",
+        "raw_value": "30000001"
+      }
+    },
+    "instrumentada_20000": {
+      "job_id": "707c3543-d7bf-4503-971c-d8339d154c43",
+      "estado": "completada",
+      "total_rows": 20000,
+      "valid_rows": 20000,
+      "error_rows": 0,
+      "elapsed_s": 568.1,
+      "rows_per_second": 35,
+      "samples": 553,
+      "event_loop_lag_ms": {
+        "max": 316.15,
+        "p99": 79.17
+      },
+      "memory_peak_bytes": {
+        "rss": 272408576,
+        "heap_used": 57065616
+      },
+      "db_pool_peak": {
+        "total": 60,
+        "idle": 60,
+        "waiting": 118,
+        "max": 60
+      }
+    }
+  },
+  "verificacion_dni": {
+    "duplicados_internos_csv": 0,
+    "solapes_entre_csv_5k_ingenua_20k": 0,
+    "csv_20000_comparten_rango": true,
+    "rango_compartido": "50000001..50040000",
+    "bd_usuarios": 40005,
+    "bd_dni_distintos": 40005,
+    "bd_grupos_duplicados": 0
+  },
+  "archivos_crudos_locales": [
+    "tmp/mediciones/health-baseline.json",
+    "tmp/mediciones/import-5000-worker.json",
+    "tmp/mediciones/import-5000-naive.json",
+    "tmp/mediciones/import-20000-worker.json",
+    "tmp/mediciones/import-20000-incidente.json",
+    "tmp/mediciones/import-20000-metrics.json"
+  ],
+  "nota": "Los archivos bajo tmp/mediciones son locales y están gitignored; este resumen es la copia versionada."
+}

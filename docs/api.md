@@ -18,6 +18,7 @@ Roles (`src/domain/shared/types.ts`): `administrador`, `preceptor`, `docente`, `
 Notas comunes:
 
 - Todos los schemas son `.strict()`: los campos desconocidos en params, query o body se rechazan.
+- Paginación, filtros y orden: `limit` / `offset`, sin parámetros de orden; ver [Paginación, filtros y ordenamiento](#paginación-filtros-y-ordenamiento).
 - Todas las rutas bajo `/api/v1` están sujetas a rate limiting global.
 - Las mutaciones marcadas con `Idempotency-Key` requieren esa cabecera (8–255 caracteres). En replay responden el mismo cuerpo con `Idempotent-Replayed: true`; ver [Idempotencia](#idempotencia).
 - Muchos endpoints aplican, además del rol, restricciones de propiedad/alcance (ej. "docente titular de la materia", "tutor vinculado", "solo su propio registro"). Se indican bajo cada tabla.
@@ -390,6 +391,106 @@ X-Request-Id: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
 | POST | `/api/v1/cursos` (y alias `/api/v1/cursoDivisionTurno`) | `user:<actorId>` | `201 · Curso` |
 
 Errores propios: `400 IDEMPOTENCY_KEY_REQUIRED` (cabecera ausente o longitud inválida; en rutas públicas sin `publicScope` también `401 UNAUTHENTICATED`), `409 IDEMPOTENCY_KEY_REUSED` (mismo scope y clave con distinto pedido) y `409 CONFLICT` (operación en proceso o carrera al reservar). Ver [Errores](#errores).
+
+## Paginación, filtros y ordenamiento
+
+### Paginación
+
+Parámetros comunes de query (definidos en `Pagination`):
+
+| Parámetro | Tipo | Default | Rango |
+| --- | --- | --- | --- |
+| `limit` | entero (coercido desde string) | `50` | 1–500 |
+| `offset` | entero (coercido desde string) | `0` | ≥ 0 |
+
+Fuera de rango, no entero o desconocido → `422 VALIDATION_ERROR`. La respuesta paginada es `Paginado<T>`:
+
+```json
+{
+  "data": [ /* T */ ],
+  "meta": { "limit": 50, "offset": 0, "total": 50 }
+}
+```
+
+**`meta.total = offset + data.length`; no es un `COUNT` de la colección.** Con 137 filas: `?limit=50&offset=0` → `total: 50`; `?offset=50` → `total: 100`; `?offset=100` → `total: 137`. Si `offset` supera el total real (ej. `offset=150`), `total` es `150` aunque solo haya 137 filas. No sirve para calcular el número de páginas.
+
+Endpoints paginados (`Paginado<T>`):
+
+`GET /users`, `GET /preceptores`, `GET /clases`, `GET /periodos`, `GET /periodos/:id/condiciones`, `GET /instancias-evaluacion`, `GET /calificaciones`, `GET /imports/:id/errores`, `GET /auditoria`, `GET /cursos` y su alias `GET /cursoDivisionTurno`.
+
+Endpoints que aceptan `limit`/`offset` pero devuelven **array plano** (sin `meta`):
+
+`GET /admins`, `GET /alumnos`, `GET /alumnos/:id/inscripciones`, `GET /docentes`, `GET /tutores`, `GET /materias`, `GET /materias/:id/inscripciones` (además ignora ambos valores), `GET /inscripciones`, `GET /asistencias`.
+
+Listados sin paginación configurable (límites internos fijos):
+
+| Endpoint | Límite interno |
+| --- | --- |
+| `GET /cursos/:id/alumnos` (y alias) | 500 (fijo `offset=0`) |
+| `GET /asistencias?clase_id=...` (alumnos del curso) | 500 (fijo `offset=0`) |
+| `GET /calificaciones/:id/historial` | 100 (fijo `offset=0`) |
+| `GET /periodos` para roles no administradores | 10.000 filas en BD, luego `slice(offset, offset+limit)` en memoria |
+| `GET /docentes/:id/materias`, `GET /tutores/:id/alumnos`, `GET /cursos/:id/materias`, `GET /alumnos/:id/condicion` | Sin límite de query |
+
+### Filtros
+
+Los filtros se declaran en los schemas de query y se rechazan si no pertenecen al endpoint (`422 VALIDATION_ERROR` por `unrecognized_keys`). Se combinan con el **alcance por rol** (administrador sin restricción; preceptor/docente/alumno/tutor limitados a sus cursos, materias, alumnos vinculados o propios registros).
+
+| Endpoint | Filtros de query | Aplicación |
+| --- | --- | --- |
+| `GET /users` | `role`, `active` | `WHERE role` / `WHERE is_active` en BD (`true`, `false`, `1`, `0`). |
+| `GET /cursos` (y alias) | `ciclo_lectivo_id` | `WHERE ciclo_lectivo_id` + restricción de cursos permitidos por rol. |
+| `GET /materias` | `curso_division_turno_id`, `docente_id` | `WHERE` en BD; docente fuerza su propio `docente_id`; los demás se limitan a cursos permitidos. |
+| `GET /alumnos` | `curso_division_turno_id` | `WHERE` en BD + joins por rol. Preceptor: curso no asignado → `404`. Tutor: curso ajeno → `[]`. Docente: alumnos de sus materias. `alumno` → `403`. |
+| `GET /docentes` | `curso_division_turno_id` | `WHERE` en BD. **No se valida contra los cursos asignados al preceptor.** |
+| `GET /preceptores` | `curso_division_turno_id` | JOIN con `preceptor_curso` activo. |
+| `GET /inscripciones` | `alumno_id`, `materia_id`, `estado` | `alumno_id`/`materia_id` en BD; **`estado` se filtra en memoria después del `LIMIT/OFFSET`**. Alumno y tutor se restringen a sus registros/vínculos; `preceptor` → `403`. |
+| `GET /alumnos/:id/inscripciones` | `alumno_id`, `materia_id`, `estado` | `alumno_id` se toma de la URL; **`estado` se filtra en memoria después del `LIMIT/OFFSET`**. |
+| `GET /materias/:id/inscripciones` | `alumno_id`, `materia_id`, `estado` | `estado` sí es `WHERE` en BD, pero **se ignoran `limit`/`offset`**. Solo admin o docente titular de la materia. |
+| `GET /clases` | `materia_id`, `curso_division_turno_id`, `desde`, `hasta` | `WHERE` en BD (`fecha >= desde`, `fecha <= hasta`) + alcance por materia/curso/docente. |
+| `GET /asistencias` | `clase_id`, `alumno_id`, `periodo_id` | Ver ramas abajo. |
+| `GET /periodos` | `ciclo_lectivo_id`, `estado` | Admin: `WHERE` en BD. No admin: `WHERE` en BD + filtro por ciclos permitidos en memoria y `slice` manual. |
+| `GET /periodos/:id/condiciones` | `materia_id` | `WHERE periodo_id` y `materia_id` (o materias permitidas por rol). |
+| `GET /instancias-evaluacion` | `materia_id`, `periodo_id` | `WHERE` en BD; solo `administrador` y `docente`. Docente sin `materia_id` ve sus propias materias. |
+| `GET /calificaciones` | `instancia_id`, `alumno_id`, `periodo_id`, `materia_id` | `WHERE`/JOIN en BD + alcance por rol. `periodo_id` filtra por el período de la instancia; no se valida su existencia directamente. |
+| `GET /alumnos/:id/condicion` | `periodo_id` (obligatorio) | `WHERE alumno_id` + `periodo_id`; sin paginación. |
+| `GET /auditoria` | `entidad`, `entidad_id` | `WHERE` en BD; para no administradores se agrega `actor_id = actor.id`. |
+| `GET /imports/:id/errores` | solo `limit`/`offset` | `WHERE import_job_id`; solo administrador. |
+
+Ramas de `GET /asistencias` (un único path, respuesta según filtro):
+
+1. Con `clase_id` (tiene prioridad sobre los demás): devuelve `{ clase, alumnos: [{ alumno, asistencia }] }` con todos los alumnos del curso (500 fijos); `alumno_id`/`periodo_id` y `limit`/`offset` se ignoran.
+2. Con `alumno_id` **y** `periodo_id`: devuelve las asistencias del alumno entre las fechas del período; `limit`/`offset` se ignoran.
+3. En cualquier otro caso (incluido `periodo_id` suelto): lista plana con `WHERE alumno_id`/`clase_id` en BD y `limit`/`offset` aplicados. **Sin filtros no se aplica alcance por rol y se devuelven todas las asistencias.**
+
+Debido a que `estado` se aplica después del `LIMIT/OFFSET` en dos endpoints, `GET /inscripciones?limit=50&estado=aprobado` puede devolver `[]` aunque existan inscripciones aprobadas más adelante.
+
+### Ordenamiento
+
+**No existe ningún parámetro de orden** (`sort`, `order`, `orden`, `order_by`, etc.). Enviarlo devuelve `422 VALIDATION_ERROR` (`unrecognized_keys`). El orden lo decide el repositorio y no puede modificarse desde la API.
+
+| Endpoint | Orden |
+| --- | --- |
+| `GET /users`, `GET /admins` | `created_at DESC` |
+| `GET /alumnos`, `GET /cursos/:id/alumnos` | `last_name, first_name` |
+| `GET /docentes`, `GET /tutores`, `GET /preceptores` | `last_name, first_name` |
+| `GET /cursos` (y alias) | `curso, division, turno` |
+| `GET /materias`, `GET /cursos/:id/materias`, `GET /docentes/:id/materias` | `nombre` |
+| `GET /inscripciones`, `GET /alumnos/:id/inscripciones` | `fecha_inscripcion DESC` |
+| `GET /materias/:id/inscripciones` | `fecha_inscripcion` (ascendente) |
+| `GET /clases` | `fecha, hora_inicio` |
+| `GET /asistencias?clase_id=...` | Orden de los alumnos (`last_name, first_name`); las asistencias se mergean en memoria |
+| `GET /asistencias?alumno_id=&periodo_id=` | `fecha, hora_inicio` de la clase |
+| `GET /asistencias` (sin esos filtros) | `created_at DESC` |
+| `GET /periodos` | `fecha_inicio` |
+| `GET /periodos/:id/condiciones` | `alumno_id, materia_id` |
+| `GET /alumnos/:id/condicion` | `materia_id` |
+| `GET /instancias-evaluacion` | `fecha, created_at` |
+| `GET /calificaciones` | `created_at DESC` |
+| `GET /calificaciones/:id/historial`, `GET /auditoria` | `ocurrido_en DESC` |
+| `GET /imports/:id/errores` | `row_number, id` |
+
+Nota: `GET /tutores/:id/alumnos` no ordena explícitamente: recorre los vínculos por `created_at` y carga cada alumno; el orden final es el de creación de los vínculos. Tampoco hay orden explícito en el array `cursos` de `GET /me`.
 
 ## Endpoints
 

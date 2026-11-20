@@ -12,6 +12,7 @@ const baselineSeconds = Number(process.env.LOAD_DURATION ?? 30);
 const maxSeconds = Number(process.env.LOAD_MAX_SECONDS ?? 900);
 const username = process.env.LOAD_USERNAME ?? 'admin';
 const password = process.env.LOAD_PASSWORD ?? 'Admin1234!';
+const metricsToken = process.env.LOAD_METRICS_TOKEN ?? 'local-metrics-token';
 const output = resolve(
   process.env.LOAD_OUTPUT ?? `tmp/mediciones/${csvPath ? 'import' : 'baseline'}-${Date.now()}.json`,
 );
@@ -56,6 +57,10 @@ function authHeaders(token?: string): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function metricsHeaders(token: string): Record<string, string> {
+  return { ...authHeaders(token), 'x-internal-token': metricsToken };
+}
+
 function startLoad(): { instance: AutocannonInstance; result: Promise<AutocannonResult> } {
   let resolveResult!: (value: AutocannonResult) => void;
   let rejectResult!: (reason: unknown) => void;
@@ -78,7 +83,7 @@ async function sampleMetrics(token: string): Promise<MetricsSample> {
     event_loop: MetricsSample['event_loop'];
     memory: { rss: number; heapUsed: number };
     db_pool: MetricsSample['db_pool'];
-  }>('/internal/metrics', { headers: authHeaders(token) });
+  }>('/internal/metrics', { headers: metricsHeaders(token) });
   return {
     at: new Date().toISOString(),
     event_loop: metrics.event_loop,
@@ -117,7 +122,7 @@ async function run(): Promise<void> {
 
   await fetch(`${baseUrl}/internal/metrics/reset`, {
     method: 'POST',
-    headers: authHeaders(token),
+    headers: metricsHeaders(token),
   });
 
   const samples: MetricsSample[] = [];

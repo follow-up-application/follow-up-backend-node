@@ -19,6 +19,7 @@ Notas comunes:
 
 - Todos los schemas son `.strict()`: los campos desconocidos en params, query o body se rechazan.
 - Paginación, filtros y orden: `limit` / `offset`, sin parámetros de orden; ver [Paginación, filtros y ordenamiento](#paginación-filtros-y-ordenamiento).
+- Ejemplos de pedidos y respuestas con usuarios ficticios: ver [Ejemplos](#ejemplos-con-usuarios-ficticios).
 - Todas las rutas bajo `/api/v1` están sujetas a rate limiting global.
 - Las mutaciones marcadas con `Idempotency-Key` requieren esa cabecera (8–255 caracteres). En replay responden el mismo cuerpo con `Idempotent-Replayed: true`; ver [Idempotencia](#idempotencia).
 - Muchos endpoints aplican, además del rol, restricciones de propiedad/alcance (ej. "docente titular de la materia", "tutor vinculado", "solo su propio registro"). Se indican bajo cada tabla.
@@ -363,7 +364,7 @@ HTTP/1.1 201 Created
 Idempotent-Replayed: true
 X-Request-Id: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
 
-{"id":"...","first_name":"Ana","last_name":"Pérez", ...}
+{"id":"aaaaaaaa-1111-4111-8111-111111111111","first_name":"Ana","last_name":"Pérez","dni":30111222,"username":"ana.perez","email":"ana.perez@escuela.edu.ar","role":"administrador","is_active":true,"must_change_password":false}
 ```
 
 ### Endpoints que la requieren
@@ -407,7 +408,7 @@ Fuera de rango, no entero o desconocido → `422 VALIDATION_ERROR`. La respuesta
 
 ```json
 {
-  "data": [ /* T */ ],
+  "data": [],
   "meta": { "limit": 50, "offset": 0, "total": 50 }
 }
 ```
@@ -491,6 +492,340 @@ Debido a que `estado` se aplica después del `LIMIT/OFFSET` en dos endpoints, `G
 | `GET /imports/:id/errores` | `row_number, id` |
 
 Nota: `GET /tutores/:id/alumnos` no ordena explícitamente: recorre los vínculos por `created_at` y carga cada alumno; el orden final es el de creación de los vínculos. Tampoco hay orden explícito en el array `cursos` de `GET /me`.
+
+## Ejemplos con usuarios ficticios
+
+Los datos siguientes son inventados; sirven para interpretar los formatos de request y response de esta documentación.
+
+| Usuario | `id` | Rol | `username` | Datos |
+| --- | --- | --- | --- | --- |
+| Ana Pérez | `aaaaaaaa-1111-4111-8111-111111111111` | `administrador` | `ana.perez` | DNI 30111222, email `ana.perez@escuela.edu.ar` |
+| Carlos Gómez | `bbbbbbbb-2222-4222-8222-222222222222` | `preceptor` | `carlos.gomez` | DNI 30222333, legajo `EMP-17`, curso 101 |
+| Laura Fernández | `cccccccc-3333-4333-8333-333333333333` | `docente` | `laura.fernandez` | DNI 30333444, teléfono `3515550103`, ingreso `2022-03-01` |
+| Nicolás Ruiz | `dddddddd-4444-4444-8444-444444444444` | `alumno` | `null` | DNI 50444555, nacimiento `12/05/2011`, curso 101 |
+| Sofía Torres | `ffffffff-6666-4666-8666-666666666666` | `alumno` | `null` | DNI 50666777, nacimiento `03/09/2011`, curso 101 |
+| Marta Ruiz | `eeeeeeee-5555-4555-8555-555555555555` | `tutor` | `marta.ruiz` | DNI 30555666, teléfono `3515550155`, tutora de Nicolás |
+
+Recursos de referencia: ciclo lectivo `c1c1c1c1-1000-4000-8000-000000000001`; curso **101** (`5°A - Mañana`); materia **501** (`Matemática`, titular Laura); período `c1c1c1c1-2000-4000-8000-000000000001` (`Primer trimestre`); instancia `c1c1c1c1-3000-4000-8000-000000000001` (`Parcial 1`); clase `c1c1c1c1-4000-4000-8000-000000000001`.
+
+### 1. Login de la administradora
+
+```http
+POST /api/v1/auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "ana.perez",
+  "password": "Secreto123!"
+}
+```
+
+```http
+HTTP/1.1 200 OK
+X-Request-Id: req-2026-04-15-001
+
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "rfr_9f8e7d6c5b4a3210",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "role": "administrador",
+  "first_name": "Ana",
+  "last_name": "Pérez",
+  "username": "ana.perez",
+  "must_change_password": false
+}
+```
+
+### 2. Perfil de la docente
+
+```http
+GET /api/v1/me HTTP/1.1
+Authorization: Bearer <access_token de laura.fernandez>
+```
+
+```json
+{
+  "user": {
+    "id": "cccccccc-3333-4333-8333-333333333333",
+    "first_name": "Laura",
+    "last_name": "Fernández",
+    "dni": 30333444,
+    "username": "laura.fernandez",
+    "email": "laura.fernandez@escuela.edu.ar",
+    "role": "docente",
+    "is_active": true,
+    "must_change_password": false
+  },
+  "perfiles": {
+    "docente": {
+      "telephone": "3515550103",
+      "fecha_ingreso": "2022-03-01"
+    }
+  },
+  "cursos": []
+}
+```
+
+### 3. Alta de alumno con idempotencia
+
+```http
+POST /api/v1/alumnos HTTP/1.1
+Authorization: Bearer <access_token de ana.perez>
+Idempotency-Key: 4f3a9c2e-8b11-4d0a-9f77-2c6e1a5b0d33
+Content-Type: application/json
+
+{
+  "first_name": "Nicolás",
+  "last_name": "Ruiz",
+  "dni": 50444555,
+  "fecha_nacimiento": "2011-05-12",
+  "curso_division_turno_id": 101,
+  "relationship": "madre",
+  "tutor_id": "eeeeeeee-5555-4555-8555-555555555555"
+}
+```
+
+```http
+HTTP/1.1 201 Created
+
+{
+  "id": "dddddddd-4444-4444-8444-444444444444",
+  "first_name": "Nicolás",
+  "last_name": "Ruiz",
+  "dni": 50444555,
+  "username": null,
+  "email": null,
+  "role": "alumno",
+  "is_active": true,
+  "must_change_password": false,
+  "fecha_nacimiento": "12/05/2011",
+  "curso_division_turno_id": 101,
+  "curso_division": "5°A - Mañana"
+}
+```
+
+Si se repite el mismo pedido con la misma `Idempotency-Key`, se devuelve este mismo `201` con `Idempotent-Replayed: true` (ver [Idempotencia](#idempotencia)). Si la clave se reutiliza con otro body, se devuelve `409 IDEMPOTENCY_KEY_REUSED`.
+
+### 4. Listado paginado y filtrado
+
+```http
+GET /api/v1/users?role=docente&active=true&limit=2&offset=0 HTTP/1.1
+Authorization: Bearer <access_token de ana.perez>
+```
+
+```json
+{
+  "data": [
+    {
+      "id": "cccccccc-3333-4333-8333-333333333333",
+      "first_name": "Laura",
+      "last_name": "Fernández",
+      "dni": 30333444,
+      "username": "laura.fernandez",
+      "email": "laura.fernandez@escuela.edu.ar",
+      "role": "docente",
+      "is_active": true,
+      "must_change_password": false
+    }
+  ],
+  "meta": { "limit": 2, "offset": 0, "total": 1 }
+}
+```
+
+`total` es `offset + data.length` (1 docente devuelto), no un `COUNT` de usuarios.
+
+### 5. Listado plano (docente ve sus materias)
+
+```http
+GET /api/v1/materias HTTP/1.1
+Authorization: Bearer <access_token de laura.fernandez>
+```
+
+```json
+[
+  {
+    "id": 501,
+    "nombre": "Matemática",
+    "descripcion": "Álgebra y geometría del nivel secundario",
+    "curso_division_turno_id": 101,
+    "turno": "Mañana",
+    "docente_id": "cccccccc-3333-4333-8333-333333333333",
+    "version": 1
+  }
+]
+```
+
+### 6. Asistencias de una clase
+
+```http
+GET /api/v1/asistencias?clase_id=c1c1c1c1-4000-4000-8000-000000000001 HTTP/1.1
+Authorization: Bearer <access_token de laura.fernandez>
+```
+
+```json
+{
+  "clase": {
+    "id": "c1c1c1c1-4000-4000-8000-000000000001",
+    "materia_id": 501,
+    "fecha": "2026-04-10",
+    "hora_inicio": "08:00",
+    "hora_fin": "09:30",
+    "tema": "Ecuaciones de primer grado",
+    "estado": "dictada",
+    "version": 1
+  },
+  "alumnos": [
+    {
+      "alumno": {
+        "id": "dddddddd-4444-4444-8444-444444444444",
+        "first_name": "Nicolás",
+        "last_name": "Ruiz",
+        "dni": 50444555,
+        "username": null,
+        "email": null,
+        "role": "alumno",
+        "is_active": true,
+        "must_change_password": false,
+        "fecha_nacimiento": "12/05/2011",
+        "curso_division_turno_id": 101,
+        "curso_division": "5°A - Mañana"
+      },
+      "asistencia": {
+        "id": "c1c1c1c1-6000-4000-8000-000000000001",
+        "clase_id": "c1c1c1c1-4000-4000-8000-000000000001",
+        "alumno_id": "dddddddd-4444-4444-8444-444444444444",
+        "estado": "presente",
+        "justificacion": null,
+        "registrada_por": "cccccccc-3333-4333-8333-333333333333",
+        "version": 1,
+        "updated_at": "2026-04-10T09:35:00.000Z"
+      }
+    },
+    {
+      "alumno": {
+        "id": "ffffffff-6666-4666-8666-666666666666",
+        "first_name": "Sofía",
+        "last_name": "Torres",
+        "dni": 50666777,
+        "username": null,
+        "email": null,
+        "role": "alumno",
+        "is_active": true,
+        "must_change_password": false,
+        "fecha_nacimiento": "03/09/2011",
+        "curso_division_turno_id": 101,
+        "curso_division": "5°A - Mañana"
+      },
+      "asistencia": null
+    }
+  ]
+}
+```
+
+### 7. Carga de nota por el preceptor
+
+```http
+POST /api/v1/calificaciones HTTP/1.1
+Authorization: Bearer <access_token de carlos.gomez>
+Idempotency-Key: 7c1e9a3b-2d45-4f60-9a11-b8c7e6d5f432
+Content-Type: application/json
+
+{
+  "instancia_id": "c1c1c1c1-3000-4000-8000-000000000001",
+  "alumno_id": "dddddddd-4444-4444-8444-444444444444",
+  "valor": "8.50"
+}
+```
+
+```http
+HTTP/1.1 201 Created
+
+{
+  "id": "c1c1c1c1-5000-4000-8000-000000000001",
+  "instancia_id": "c1c1c1c1-3000-4000-8000-000000000001",
+  "alumno_id": "dddddddd-4444-4444-8444-444444444444",
+  "valor": "8.50",
+  "estado": "activa",
+  "version": 1,
+  "updated_at": "2026-04-15T14:20:00.000Z"
+}
+```
+
+### 8. Tutor consulta las notas de su alumno
+
+```http
+GET /api/v1/calificaciones?periodo_id=c1c1c1c1-2000-4000-8000-000000000001&alumno_id=dddddddd-4444-4444-8444-444444444444 HTTP/1.1
+Authorization: Bearer <access_token de marta.ruiz>
+```
+
+```json
+{
+  "data": [
+    {
+      "id": "c1c1c1c1-5000-4000-8000-000000000001",
+      "instancia_id": "c1c1c1c1-3000-4000-8000-000000000001",
+      "alumno_id": "dddddddd-4444-4444-8444-444444444444",
+      "valor": "8.50",
+      "estado": "activa",
+      "version": 1,
+      "updated_at": "2026-04-15T14:20:00.000Z"
+    }
+  ],
+  "meta": { "limit": 50, "offset": 0, "total": 1 }
+}
+```
+
+### 9. Errores
+
+La tutora no puede listar usuarios:
+
+```http
+GET /api/v1/users HTTP/1.1
+Authorization: Bearer <access_token de marta.ruiz>
+```
+
+```http
+HTTP/1.1 403 Forbidden
+X-Request-Id: req-2026-04-15-002
+
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "No tiene permisos para acceder a este recurso."
+  },
+  "message": "No tiene permisos para acceder a este recurso.",
+  "requestId": "req-2026-04-15-002"
+}
+```
+
+Un parámetro de orden no declarado se rechaza por el schema estricto:
+
+```http
+GET /api/v1/cursos?sort=curso HTTP/1.1
+Authorization: Bearer <access_token de ana.perez>
+```
+
+```http
+HTTP/1.1 422 Unprocessable Entity
+X-Request-Id: req-2026-04-15-003
+
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "La entrada no es válida.",
+    "details": [
+      {
+        "path": "",
+        "code": "unrecognized_keys",
+        "message": "Unrecognized key(s) in object: 'sort'"
+      }
+    ]
+  },
+  "message": "La entrada no es válida.",
+  "requestId": "req-2026-04-15-003"
+}
+```
 
 ## Endpoints
 

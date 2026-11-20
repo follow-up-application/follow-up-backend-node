@@ -1,6 +1,6 @@
 # Modelo de dominio
 
-Este documento describe las entidades principales del backend, organizadas por contexto. Las clases con comportamiento viven en `src/domain/**`; los repositorios y mappers de `src/infra/db` solo traducen esas estructuras a PostgreSQL.
+Este documento describe las entidades principales del backend, organizadas por contexto. Las clases con comportamiento viven en `src/domain/**`; los repositorios y mappers de `src/infra/db` persisten esas estructuras y, en algunos casos, implementan parte de la máquina de estados (reclamo de jobs, reintentos y recuperación de leases).
 
 ## Convenciones
 
@@ -21,6 +21,7 @@ Este documento describe las entidades principales del backend, organizadas por c
 - `Periodo` 1 → N `ReglaCondicion` y 1 → 0..1 `PeriodoCierre`; el cierre congela N `CondicionAlumno`.
 - `User` (administrador) 1 → N `ImportJob` 1 → N filas y errores de staging.
 - `RegistroAuditoria`, `IdempotencyKey` y `Notificacion` son conceptos transversales vinculados al actor/operación.
+
 ## Diagrama entidad-relación
 
 El diagrama muestra los agregados principales y sus cardinalidades. Las tablas puente y los tokens de refresh son artefactos de persistencia: `preceptor_curso` aparece como relación y `RefreshToken` se omite por no ser una entidad de dominio.
@@ -67,9 +68,9 @@ erDiagram
     IMPORT_JOB ||--o{ IMPORT_ROW : procesa
     IMPORT_JOB ||--o{ IMPORT_ERROR : reporta
 
-    USERS ||--o{ AUDITORIA : actua
+    USERS |o--o{ AUDITORIA : actua
     USERS ||--o{ NOTIFICACION : recibe
-    USERS ||--o{ IDEMPOTENCY_KEY : usa
+    USERS |o--o{ IDEMPOTENCY_KEY : usa
 
     USERS {
         string id PK
@@ -202,7 +203,7 @@ Fuente: `src/domain/grading/entities.ts`.
 
 | Entidad | Responsabilidad | Reglas principales |
 |---|---|---|
-| `Periodo` (:31) | Ventana de evaluación dentro del ciclo (`trimestre|cuatrimestre`). | `assertOpen()` bloquea escrituras si está `cerrado`; `close()` idempotente. |
+| `Periodo` (:31) | Ventana de evaluación dentro del ciclo (`trimestre|cuatrimestre`). | `assertOpen()` declara la restricción en el dominio, pero la aplicación usa `isOpen()` y devuelve `CONFLICT`; `close()` idempotente. |
 | `InstanciaEvaluacion` (:86) | Evaluación planificada de una materia en un período. | Tipo `parcial|tp|oral|recuperatorio|otro`; `changeWeight()` exige peso > 0, 0–100 y hasta 2 decimales. |
 | `Calificacion` (:143) | Nota de un alumno y su ciclo de vida. | Estados `activa|rectificada|anulada`; notas 0–10; `annul()`, `rectify()` y `replaceAnnulled()` exigen motivo; la rectificación es administrador. |
 | `ReglaCondicion` (:251) | Parámetros de condición por período, opcionalmente por materia. | Configuración de asistencia mínima y notas de regularidad/promoción. |
@@ -220,7 +221,7 @@ Fuente: `src/domain/imports/entities.ts` y `src/domain/imports/alumnos-csv.ts`.
 | `ImportJob` (:26) | Representa el trabajo de importación masiva y su progreso. | Estados `pendiente|procesando|completada|fallida`; contadores de filas, hash del CSV, token/lease/heartbeat del worker. Las transiciones se orquestan en `application/imports-service.ts` y `infra/imports/import-worker.ts`. |
 | `ImportRowProps` (:96) | Estructura de la fila intermedia de staging. | Estados `pendiente|valida|invalida`. |
 | `ImportErrorProps` (:102) | Error estructurado por fila/columna. | Código, mensaje y valor crudo; se expone en `/imports/:id/errores`. |
-| `validateAlumnoRow()` (:95) | Valida y normaliza cada fila del CSV. | Campos obligatorios, DNI, fecha no futura, curso 1–7, división A–Z, turno, relación y teléfono; exige `otra_relacion` cuando corresponde; rechaza DNI alumno = DNI tutor; detecta duplicados dentro del archivo. |
+| `validateAlumnoRow()` (:95) | Valida y normaliza cada fila del CSV. | Campos obligatorios, DNI, fecha no futura, curso 1–7, división A–Z, turno, relación y teléfono; exige `otra_relacion` cuando corresponde; rechaza DNI alumno = DNI tutor. La detección de duplicados dentro del archivo la hace `addDuplicateError()` desde el parser. |
 
 ## Conceptos transversales
 
@@ -244,7 +245,7 @@ Fuente: `src/domain/imports/entities.ts` y `src/domain/imports/alumnos-csv.ts`.
 
 - **Responsabilidad**: evitar que un reintento de red ejecute dos veces una operación de mutación.
 - **Componentes**: entidad `IdempotencyKey` (`src/domain/idempotency/entities.ts:17`), middleware en `src/infra/http/middleware.ts:179`, `IdempotencyRepository` y tabla `idempotency_keys` (:414).
-- **Reglas**: el header `Idempotency-Key` es obligatorio en altas, cambios y bajas; la clave se asocia al actor, al alcance de la ruta y al hash del pedido. Un replay idéntico devuelve la respuesta guardada con `Idempotent-Replayed: true`; si la clave ya se usó con otro pedido se rechaza. Las respuestas no 2xx liberan la clave y el TTL por defecto es 24 h.
+- **Reglas**: el middleware se aplica solo a las rutas declaradas (principalmente `POST` y `PUT /preceptores/:id/cursos`; no a todos los `PUT`/`DELETE`). La unicidad en BD es `(scope_key, clave)`, donde `scope_key` es `user:<actor>` o un ámbito público; el método, la ruta y el cuerpo forman el `request_hash` que se compara en un replay. Un replay idéntico devuelve la respuesta guardada con `Idempotent-Replayed: true`; si la clave ya se usó con otro pedido se rechaza. Las respuestas no 2xx liberan la clave y el TTL por defecto es 24 h.
 - **Caso especial**: en `POST /imports/alumnos` la clave se complementa con el hash del CSV para no repetir una importación con otro archivo.
 - **Errores**: `IDEMPOTENCY_KEY_REQUIRED` (400) y `IDEMPOTENCY_KEY_REUSED` (409).
 
@@ -252,7 +253,7 @@ Fuente: `src/domain/imports/entities.ts` y `src/domain/imports/alumnos-csv.ts`.
 
 - **Responsabilidad**: procesar altas masivas de alumnos, tutores y vínculos desde un CSV de forma asíncrona, con validación por fila y trazabilidad del job.
 - **Componentes**: `ImportJob`, `ImportRowProps`, `ImportErrorProps` (`src/domain/imports/entities.ts`), reglas de CSV (`src/domain/imports/alumnos-csv.ts`), orquestación en `src/application/imports-service.ts` y ejecución en `src/infra/imports/import-worker.ts`.
-- **Flujo**: (1) validación de permiso de administrador, tamaño y headers; (2) creación del job `pendiente` con hash del archivo; (3) claim con lease y heartbeat; (4) parseo/validación por lotes; (5) inserción de alumnos/tutores/vínculos e inscripciones; (6) cierre en `completada` o `fallida` con contadores y errores.
+- **Flujo**: (1) validación de permiso de administrador, tamaño y headers; (2) creación del job `pendiente` con hash del archivo; (3) reclamo con lease y heartbeat; (4) parseo/validación por lotes; (5) inserción de usuarios, tutores, alumnos y vínculos `tutor_alumno`, con entradas de auditoría (no crea inscripciones); (6) cierre en `completada` o `fallida` con contadores y errores.
 - **Estados y transiciones**: ver la sección *Estados y transiciones → Importación (transiciones)*.
 - **Persistencia**: `import_jobs`, `import_rows` y `import_errors`. Solo existe un job activo por creador; los jobs terminales se eliminan por retención.
 - **Endpoints**: `POST /api/v1/imports/alumnos`, `GET /api/v1/imports/:id` y `GET /api/v1/imports/:id/errores`, con límite propio `IMPORT_RATE_LIMIT_MAX`.
@@ -262,7 +263,7 @@ Fuente: `src/domain/imports/entities.ts` y `src/domain/imports/alumnos-csv.ts`.
 - **Responsabilidad**: diferir y reintentar avisos a tutores ante ausencias, cambios de calificación y cierres de período.
 - **Componentes**: entidad `Notificacion` (`src/domain/notifications/entities.ts:17`), puerto `Notifier`, repositorio `src/infra/db/repositories/notifications.ts` y tabla `notificaciones` (:493).
 - **Datos**: destinatario, tipo, payload, estado, `intentos`, `next_attempt_at`, `last_error`, `dedupe_key` y timestamps.
-- **Reglas**: `dedupeKey` evita duplicados; `claimBatch()` solo toma pendientes con `next_attempt_at <= now()` e incrementa `intentos`; `markSent()` pasa a `enviada`; `markFailed()` vuelve a `pendiente` si hubo menos de 3 intentos y pasa a `fallida` al agotarlos. El reintento se programa 60 s después.
+- **Reglas**: `dedupeKey` evita duplicados; `claimBatch()` solo toma pendientes con `next_attempt_at <= now()` e incrementa `intentos`; `markSent()` pasa a `enviada`; `markFailed()` vuelve a `pendiente` si hubo menos de 3 intentos y pasa a `fallida` al agotarlos. El worker aplica backoff exponencial desde 60 s (`BASE_BACKOFF_MS * 2^(intentos-1)`, tope 60 min); los 60 s de `claimBatch()` son una ventana de invisibilidad, no el backoff.
 - **Disparadores**: registrar una ausencia, crear/actualizar/anular/rectificar calificaciones y cerrar un período.
 - **Estados y transiciones**: ver la sección *Estados y transiciones → Notificación*. No hay endpoint HTTP de lectura en este repositorio.
 
@@ -293,8 +294,8 @@ Esta sección detalla qué debe permanecer verdadero antes y después de cada mu
 | Entidad | Invariantes | Reglas / transiciones | Error al violar |
 |---|---|---|---|
 | `Institucion` | CUE y datos de contacto válidos; `activa` define disponibilidad. | `activate()` / `deactivate()`. | `VALIDATION_ERROR`. |
-| `CicloLectivo` | `año` y rango `fechaInicio <= fechaFin`; estado `planificado|activo|cerrado`. | `contains(date)` comprueba ventana; `activate()` prohíbe activar un ciclo cerrado; `close()` es idempotente. | `VALIDATION_ERROR`; `INVALID_STATE_TRANSITION`. |
-| `CursoDivisionTurno` | Único por `(ciclo, curso, división, turno)` en BD; `turno` es `Mañana|Tarde`; `capacidadMaxima >= alumnos actuales`. | `changeCapacity(capacidad, alumnosActuales)` rechaza reducir por debajo de la ocupación; `displayName()` deriva el nombre. | `VALIDATION_ERROR` en dominio; `CAPACITY_EXCEEDED` al inscribir sin cupo. |
+| `CicloLectivo` | `año` y rango `fechaInicio < fechaFin`; estado `planificado|activo|cerrado`. | `contains(date)` comprueba ventana; `activate()` prohíbe activar un ciclo cerrado; `close()` es idempotente. | `VALIDATION_ERROR`; `INVALID_STATE_TRANSITION`. |
+| `CursoDivisionTurno` | Único por `(ciclo, curso, división, turno)` en BD; `turno` es `Mañana|Tarde`; `capacidadMaxima >= alumnos actuales`. | `changeCapacity(capacidad, alumnosActuales)` rechaza reducir por debajo de la ocupación; `displayName()` deriva el nombre. | `VALIDATION_ERROR` en dominio; `CAPACITY_EXCEEDED` al crear/cambiar un alumno o en la importación CSV si supera la capacidad. |
 | `Materia` | `nombre` y `descripcion` no vacíos; pertenece a un curso; `docenteId` referencia un docente. | `rename()`, `changeDescription()`, `assignTeacher()` y `changeCourse()` validan longitudes y reasignan referencias. | `VALIDATION_ERROR`. |
 | `Inscripcion` | Estado `pendiente|aprobado|rechazado|cancelado`; única activa por `(alumno, materia)` en BD. | `approve()` y `reject()` solo desde `pendiente`; `cancel()` está prohibida si ya está `rechazado` y es idempotente si ya está cancelada. | `INVALID_STATE_TRANSITION`; `DUPLICATE_RESOURCE`. |
 | `Clase` | `fin > inicio`, duración ≤ 8 h; estado `programada|dictada|cancelada`; única por `(materia, fecha, horaInicio)` en BD. | `updateSchedule()` revalida horario; `markTaught()` no permite pasar desde `cancelada`; `cancel()` no permite desde `dictada`; `canRegisterAttendance()` solo en `dictada`. | `VALIDATION_ERROR`; `INVALID_STATE_TRANSITION`. |
@@ -309,8 +310,8 @@ Esta sección detalla qué debe permanecer verdadero antes y después de cada mu
 
 | Entidad | Invariantes | Reglas / transiciones | Error al violar |
 |---|---|---|---|
-| `Periodo` | Tipo `trimestre|cuatrimestre`; estado `abierto|cerrado`; rango de fechas dentro del ciclo. | `assertOpen()` bloquea escrituras; `close()` es idempotente; el cierre genera notificaciones y snapshots. | `PERIOD_CLOSED`; `INVALID_STATE_TRANSITION`. |
-| `InstanciaEvaluacion` | Tipo `parcial|tp|oral|recuperatorio|otro`; `peso > 0`, ≤ 100 y ≤ 2 decimales; pertenece a materia y período. | `changeWeight()` valida el porcentaje; crear/actualizar está prohibido con período cerrado. | `VALIDATION_ERROR`; `PERIOD_CLOSED`. |
+| `Periodo` | Tipo `trimestre|cuatrimestre`; estado `abierto|cerrado`; rango de fechas dentro del ciclo. | La aplicación consulta `isOpen()` para calificaciones y condiciones y devuelve `CONFLICT`; `assertOpen()` existe en el dominio pero no se usa; `close()` es idempotente y genera notificaciones y snapshots. | `CONFLICT`; `INVALID_STATE_TRANSITION`. El error `PERIOD_CLOSED` está declarado pero no se usa. |
+| `InstanciaEvaluacion` | Tipo `parcial|tp|oral|recuperatorio|otro`; `peso > 0`, ≤ 100 y ≤ 2 decimales; pertenece a materia y período. | `changeWeight()` valida el porcentaje; crear/actualizar está prohibido con período cerrado. | `VALIDATION_ERROR`; `CONFLICT`. |
 | `Calificacion` | Valor 0–10 con ≤ 2 decimales; estado `activa|rectificada|anulada`; única por `(instancia, alumno)` en BD. | `annul()`, `rectify()` y `replaceAnnulled()` exigen motivo; `changeValue()` no altera una nota anulada; `replaceAnnulled()` solo desde `anulada`; la rectificación es exclusiva de administrador en aplicación. | `VALIDATION_ERROR`; `INVALID_STATE_TRANSITION`. |
 | `ReglaCondicion` | Umbrales de asistencia y notas válidos; única activa por período o por `(período, materia)` en BD. | `calculateCondition()` usa la regla de materia si existe, si no la general. | `VALIDATION_ERROR`; `DUPLICATE_RESOURCE`. |
 | `CondicionAlumno` | Única por `(período, alumno, materia)` en BD; resultado `regular|libre|promocionado|no_aplica`. | Snapshot inmutable tras el cálculo/cierre; se recalcula antes de cerrar y se congela con `PeriodoCierre`. | `PERIOD_INCOMPLETE` si faltan datos para calcular. |
@@ -322,21 +323,21 @@ La función `calculateCondition()` aplica este orden: sin clases dictadas o sin 
 
 | Entidad | Invariantes | Reglas / transiciones | Error al violar |
 |---|---|---|---|
-| `ImportJob` | Estado `pendiente|procesando|completada|fallida`; un job activo por administrador creador en BD; hash/ruta identifican el CSV. | `claim()`, `heartbeat()` y `recover()` gestionan propiedad del worker mediante lease; la finalización fija contadores y estado terminal. | `IMPORT_ALREADY_RUNNING`; `IMPORT_INVALID_FILE`; `PAYLOAD_TOO_LARGE`. |
+| `ImportJob` | Estado `pendiente|procesando|completada|fallida`; un job activo por administrador creador en BD; hash/ruta identifican el CSV. | `claimNext()`, `heartbeat()` y `recoverExpiredLeases()` gestionan propiedad del worker mediante lease; `handleTransientFailure()` reprograma fallas transitorias; la finalización fija contadores y estado terminal. | `IMPORT_ALREADY_RUNNING`; `IMPORT_INVALID_FILE`; `PAYLOAD_TOO_LARGE`. |
 | `ImportRowProps` / `ImportErrorProps` | `rowNumber > 0`; estado de fila `pendiente|valida|invalida`; el error conserva fila, columna, código, mensaje y valor crudo. | Los errores se acumulan por lote y se exponen en el endpoint de errores del job. | `VALIDATION_ERROR` en el parseo. |
-| `validateAlumnoRow()` | DNI de 7–8 dígitos; fecha de nacimiento válida y no futura; curso 1–7; división A–Z; turno `Mañana|Tarde`; relación `padre|madre|otra`. | Si relación es `otra`, exige `otra_relacion`; rechaza DNI alumno = DNI tutor (`SAME_DNI`); marca duplicados dentro del archivo. | Errores por columna con códigos específicos; la fila pasa a `invalida`. |
+| `validateAlumnoRow()` | DNI de 7–8 dígitos; fecha de nacimiento válida y no futura; curso 1–7; división A–Z; turno `Mañana|Tarde`; relación `padre|madre|otra`. | Si relación es `otra`, exige `otra_relacion`; rechaza DNI alumno = DNI tutor (`SAME_DNI`). `addDuplicateError()`, llamada desde el parser, marca duplicados dentro del archivo. | Errores por columna con códigos específicos; la fila pasa a `invalida`. |
 
 ### Conceptos transversales
 
 | Concepto | Invariantes | Reglas / transiciones | Error al violar |
 |---|---|---|---|
-| `RegistroAuditoria` | Append-only; referencia polimórfica `(entidad, entidadId)`; acción dentro del enum declarado; actor y rol opcionales. | La BD tiene un trigger que impide `UPDATE` y `DELETE` sobre `auditoria`. | `FORBIDDEN` en la capa HTTP; error de BD si se intenta mutar. |
-| `IdempotencyKey` | Única por `(actor, scope, clave)`; estado `procesando|completada`; expiración configurada. | Un replay con la misma clave y mismo pedido devuelve la respuesta guardada; con distinto pedido se rechaza; las respuestas no 2xx liberan la clave. | `IDEMPOTENCY_KEY_REQUIRED`; `IDEMPOTENCY_KEY_REUSED`. |
-| `Notificacion` | `dedupeKey` única; estado `pendiente|enviada|fallida`; intentos y próximo intento definidos. | El worker reintenta según política y registra el error último; el destinatario es un usuario. | `CONFLICT` ante duplicados; error de servicio si falla el envío. |
+| `RegistroAuditoria` | Solo se agrega; referencia polimórfica `(entidad, entidadId)`; acción dentro del enum declarado; actor y rol opcionales (sin FK a `users`). | La BD tiene un trigger que impide `UPDATE` y `DELETE` sobre `auditoria`. | No hay endpoints HTTP de mutación; error de BD si se intenta mutar. |
+| `IdempotencyKey` | Única por `(scope_key, clave)`; `scope_key` es `user:<actor>` o un ámbito público y `actor_id` es nullable; estado `procesando|completada`; expiración configurada. | Un replay con la misma clave y mismo pedido devuelve la respuesta guardada; con distinto pedido se rechaza; las respuestas no 2xx liberan la clave. | `IDEMPOTENCY_KEY_REQUIRED`; `IDEMPOTENCY_KEY_REUSED`. |
+| `Notificacion` | `dedupeKey` única; estado `pendiente|enviada|fallida`; intentos y próximo intento definidos. | El worker reintenta con backoff exponencial y registra el error último; el destinatario es un usuario. | Duplicados ignorados por `ON CONFLICT DO NOTHING` (sin error); error de servicio si falla el envío. |
 
 ## Estados y transiciones
 
-Las transiciones que no figuran en las tablas no están permitidas. Los métodos no idempotentes lanzan `INVALID_STATE_TRANSITION` (409) cuando el estado de origen no es válido; las validaciones de datos lanzan `VALIDATION_ERROR` (422). Fuentes: entidades de `src/domain/**` y, para importación/notificación, los repositorios de `src/infra/db/repositories/`.
+Las transiciones principales figuran en las tablas. Los métodos no idempotentes lanzan `INVALID_STATE_TRANSITION` (409) cuando el estado de origen no es válido; las validaciones de datos lanzan `VALIDATION_ERROR` (422). Fuentes: entidades de `src/domain/**`, servicios de `src/application/**` y, para importación/notificación, los repositorios de `src/infra/db/repositories/` y los workers de `src/infra/`.
 
 ### Inscripción
 
@@ -344,7 +345,7 @@ Estados: `pendiente`, `aprobado`, `rechazado`, `cancelado`.
 
 | Desde | Hacia | Disparador | Condición / efecto |
 |---|---|---|---|
-| — | `pendiente` | Alta de inscripción | Alumno y materia válidos, cupo disponible, sin inscripción activa previa. |
+| — | `pendiente` | Alta de inscripción | Alumno y materia válidos, mismo curso, sin inscripción activa previa; el cupo se valida al alta/cambio del alumno, no aquí. |
 | `pendiente` | `aprobado` | `approve()` | Solo desde `pendiente`. |
 | `pendiente` | `rechazado` | `reject()` | Solo desde `pendiente`. |
 | `pendiente` o `aprobado` | `cancelado` | `cancel()` | `rechazado` no puede cancelarse. |
@@ -358,7 +359,7 @@ Estados: `presente`, `ausente`, `justificada`, `tarde`.
 
 | Desde | Hacia | Disparador | Condición / efecto |
 |---|---|---|---|
-| — | cualquiera de los cuatro | `changeStatus()` al registrar | La clase debe estar `dictada`; si es `justificada` exige texto ≤ 500. |
+| — | `presente`, `ausente` o `tarde` | `changeStatus()` al registrar | La clase debe estar `dictada`; `justificada` se rechaza en el alta (422) y se alcanza con `justify()`. |
 | cualquiera | cualquiera de los cuatro | `changeStatus()` | Sin restricción de origen; limpia `justificacion` salvo que el destino sea `justificada`. |
 | `ausente` | `justificada` | `justify(texto)` | Texto obligatorio, se recorta a 500 caracteres. |
 | distinto de `ausente` | `justificada` | `justify(texto)` | Prohibido: `INVALID_STATE_TRANSITION`. |
@@ -386,7 +387,7 @@ Estados: `abierto`, `cerrado`.
 | `abierto` | `cerrado` | `close()` | Requiere datos completos; genera snapshots de condición y notificaciones. |
 | `cerrado` | `cerrado` | `close()` | Idempotente. |
 | `cerrado` | `abierto` | — | No existe reapertura. |
-| `cerrado` | cualquier escritura | `assertOpen()` | Bloqueada: `PERIOD_CLOSED`. |
+| `cerrado` | escrituras de calificación/condición | `isOpen()` en aplicación | Bloqueadas con `CONFLICT`; `assertOpen()` y `PERIOD_CLOSED` no se usan. Las clases y asistencias no se bloquean por el estado del período. |
 
 ### Importación (transiciones)
 
@@ -398,6 +399,7 @@ Estados: `pendiente`, `procesando`, `completada`, `fallida`.
 | `pendiente` o `procesando` con lease vencido | `procesando` | `claimNext()` | Asigna `worker_token`, heartbeat, lease e incrementa `attempts`. |
 | `procesando` | `procesando` | `heartbeat()` | Renueva `heartbeat_at` y `lease_until`; no cambia el estado. |
 | `procesando` con lease vencido | `pendiente` | `recoverExpiredLeases()` | Libera `worker_token` y `lease_until` para reprocesar. |
+| `procesando` | `pendiente` | `handleTransientFailure()` | Falla transitoria sin lease vencido; requiere `attempts < IMPORT_MAX_ATTEMPTS` (3), incrementa `attempts` y libera el job para reintento. |
 | `procesando` | `completada` | Finalización correcta del worker | Fija contadores y `finished_at`. |
 | `procesando` | `fallida` | Finalización con error del worker | Guarda `error_code`, `error_message` y `finished_at`. |
 | `completada` o `fallida` | cualquier estado | — | Terminales; se eliminan por política de retención. |

@@ -97,3 +97,35 @@ Creados por `npm run db:seed` (solo en entornos que no sean producción). El log
 | Docente | `DOC-30222333-2024` | `30222333` | Debe cambiar la contraseña |
 | Alumno | `EST-40123456-2026` | `40123456` | Debe cambiar la contraseña |
 | Tutor | `laura@example.com` | `Tutor1234!` | El username es el email |
+
+## Permisos por rol y recurso
+
+Leyenda: **Total** = alta, listado, detalle, modificación y baja donde aplique; **Parcial** = acceso restringido por propiedad, curso, materia o vínculo; **No** = sin acceso. Un rol no permitido devuelve `403 FORBIDDEN`; un recurso fuera del alcance del actor suele devolver `404 NOT_FOUND`.
+
+| Recurso / acción | Administrador | Preceptor | Docente | Alumno | Tutor |
+| --- | --- | --- | --- | --- | --- |
+| Autenticación y sesión (`login`, `refresh`, `logout`, `/me`, `/password`) | Sí | Sí | Sí | Sí | Sí |
+| Usuarios y administradores | Total | No | No | No | No |
+| Alumnos | Total | Parcial: listar/ver de sus cursos y condición; sin inscripciones | Parcial: cursos donde dicta | Parcial: solo su perfil, inscripciones y condición; sin listado | Parcial: solo alumnos vinculados |
+| Docentes | Total | Parcial: listar/ver | Parcial: perfil y materias propias | Parcial: materias de su curso | Parcial: materias de cursos de sus alumnos |
+| Tutores | Total | No | No | No | Parcial: perfil y alumnos propios; registro público por código |
+| Preceptores | Total | Parcial: solo su perfil | No | No | No |
+| Cursos | Total | Parcial: sus cursos | Parcial: cursos de sus materias | Parcial: su curso | Parcial: cursos de sus alumnos |
+| Materias | Total | Parcial: de sus cursos | Parcial: propias | Parcial: de su curso | Parcial: de cursos de sus alumnos |
+| Inscripciones | Total | No | Parcial: de sus materias; aprobar/rechazar/cancelar | Parcial: solo propias; crear solo la propia | Parcial: de sus alumnos |
+| Clases | Total | Parcial: listar/ver de sus cursos | Parcial: crear/actualizar en sus materias | Parcial: listar/ver de su curso | Parcial: listar/ver de cursos de sus alumnos |
+| Asistencias y justificaciones | Total | Parcial: gestionar en sus cursos | Parcial: gestionar en sus materias | Parcial: solo lectura | Parcial: solo lectura de sus alumnos |
+| Períodos y cierre | Total, incluye cerrar | Parcial: ver de sus cursos | Parcial: ver de sus cursos | Parcial: ver de su ciclo | Parcial: ver de ciclos de sus alumnos |
+| Instancias de evaluación | Total | Parcial: crear/actualizar y ver por ID; no listar | Parcial: propias | Parcial: solo ver | Parcial: solo ver |
+| Calificaciones | Total, incluye rectificar | Parcial: gestionar en sus cursos; no rectificar | Parcial: en sus materias; no rectificar | Parcial: solo lectura de las propias | Parcial: solo lectura de las de sus alumnos |
+| Condición académica | Cualquier alumno | Alumnos de sus cursos | Alumnos de sus cursos | Solo la propia | Alumnos vinculados |
+| Importación de alumnos por CSV | Total: iniciar, consultar job y errores | No | No | No | No |
+| Auditoría | Todas las entradas | Solo entradas propias | Solo entradas propias | Solo entradas propias | Solo entradas propias |
+| `/health` y `/ready` | Público | Público | Público | Público | Público |
+| `/internal/metrics` | Loopback o token interno | Loopback o token interno | Loopback o token interno | Loopback o token interno | Loopback o token interno |
+
+Notas:
+
+- Si `must_change_password=true`, el usuario solo puede llamar a `GET /me`, `PUT /password` y `logout` hasta cambiar la contraseña.
+- El alcance de cursos se deriva de la asignación de preceptores, las materias cuyo titular es el docente, el curso del alumno y los vínculos tutor-alumno (`src/application/shared/scoping.ts`).
+- Los endpoints que crean, modifican o eliminan recursos requieren el header `Idempotency-Key`.

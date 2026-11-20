@@ -231,6 +231,41 @@ Fuente: `src/domain/imports/entities.ts` y `src/domain/imports/alumnos-csv.ts`.
 | `Notificacion` | Mensaje diferido al tutor con estado, reintentos y `dedupeKey`. | `src/domain/notifications/entities.ts:17` |
 | `RefreshToken` | Registro de sesión renovable; es un contrato del puerto, no una entidad con comportamiento. | `src/domain/identity/ports.ts:72` |
 
+## Detalle de contextos transversales
+
+### Auditoría
+
+- **Responsabilidad**: conservar un registro inmutable de las operaciones sensibles: qué entidad se afectó, qué acción se ejecutó, quién la ejecutó y qué cambió.
+- **Componentes**: entidad `RegistroAuditoria` (`src/domain/audit/entities.ts:27`), `AuditoriaRepository`, servicio `src/application/audit-service.ts` y tabla `auditoria` (`src/infra/db/migrations/1700000000000_initial.sql:370`).
+- **Datos**: `entidad`, `entidad_id`, `accion`, `actor_id`, `actor_rol`, `motivo`, `antes`, `despues`, `request_id` y `ocurrido_en`.
+- **Reglas**: solo se agrega; un trigger de BD impide `UPDATE` y `DELETE`. El administrador ve todas las entradas desde `GET /api/v1/auditoria`; los demás roles solo las que tienen `actor_id = self`. El historial de calificaciones (`GET /calificaciones/:id/historial`) consume estas mismas entradas filtradas por entidad.
+
+### Idempotencia
+
+- **Responsabilidad**: evitar que un reintento de red ejecute dos veces una operación de mutación.
+- **Componentes**: entidad `IdempotencyKey` (`src/domain/idempotency/entities.ts:17`), middleware en `src/infra/http/middleware.ts:179`, `IdempotencyRepository` y tabla `idempotency_keys` (:414).
+- **Reglas**: el header `Idempotency-Key` es obligatorio en altas, cambios y bajas; la clave se asocia al actor, al alcance de la ruta y al hash del pedido. Un replay idéntico devuelve la respuesta guardada con `Idempotent-Replayed: true`; si la clave ya se usó con otro pedido se rechaza. Las respuestas no 2xx liberan la clave y el TTL por defecto es 24 h.
+- **Caso especial**: en `POST /imports/alumnos` la clave se complementa con el hash del CSV para no repetir una importación con otro archivo.
+- **Errores**: `IDEMPOTENCY_KEY_REQUIRED` (400) y `IDEMPOTENCY_KEY_REUSED` (409).
+
+### Importaciones
+
+- **Responsabilidad**: procesar altas masivas de alumnos, tutores y vínculos desde un CSV de forma asíncrona, con validación por fila y trazabilidad del job.
+- **Componentes**: `ImportJob`, `ImportRowProps`, `ImportErrorProps` (`src/domain/imports/entities.ts`), reglas de CSV (`src/domain/imports/alumnos-csv.ts`), orquestación en `src/application/imports-service.ts` y ejecución en `src/infra/imports/import-worker.ts`.
+- **Flujo**: (1) validación de permiso de administrador, tamaño y headers; (2) creación del job `pendiente` con hash del archivo; (3) claim con lease y heartbeat; (4) parseo/validación por lotes; (5) inserción de alumnos/tutores/vínculos e inscripciones; (6) cierre en `completada` o `fallida` con contadores y errores.
+- **Estados y transiciones**: ver la sección *Estados y transiciones → Importación (transiciones)*.
+- **Persistencia**: `import_jobs`, `import_rows` y `import_errors`. Solo existe un job activo por creador; los jobs terminales se eliminan por retención.
+- **Endpoints**: `POST /api/v1/imports/alumnos`, `GET /api/v1/imports/:id` y `GET /api/v1/imports/:id/errores`, con límite propio `IMPORT_RATE_LIMIT_MAX`.
+
+### Notificaciones
+
+- **Responsabilidad**: diferir y reintentar avisos a tutores ante ausencias, cambios de calificación y cierres de período.
+- **Componentes**: entidad `Notificacion` (`src/domain/notifications/entities.ts:17`), puerto `Notifier`, repositorio `src/infra/db/repositories/notifications.ts` y tabla `notificaciones` (:493).
+- **Datos**: destinatario, tipo, payload, estado, `intentos`, `next_attempt_at`, `last_error`, `dedupe_key` y timestamps.
+- **Reglas**: `dedupeKey` evita duplicados; `claimBatch()` solo toma pendientes con `next_attempt_at <= now()` e incrementa `intentos`; `markSent()` pasa a `enviada`; `markFailed()` vuelve a `pendiente` si hubo menos de 3 intentos y pasa a `fallida` al agotarlos. El reintento se programa 60 s después.
+- **Disparadores**: registrar una ausencia, crear/actualizar/anular/rectificar calificaciones y cerrar un período.
+- **Estados y transiciones**: ver la sección *Estados y transiciones → Notificación*. No hay endpoint HTTP de lectura en este repositorio.
+
 ## Tipos y reglas compartidas
 
 - Roles: `administrador|preceptor|docente|alumno|tutor` (`src/domain/shared/types.ts:27`).

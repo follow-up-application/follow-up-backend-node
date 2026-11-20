@@ -21,8 +21,148 @@ Este documento describe las entidades principales del backend, organizadas por c
 - `Periodo` 1 → N `ReglaCondicion` y 1 → 0..1 `PeriodoCierre`; el cierre congela N `CondicionAlumno`.
 - `User` (administrador) 1 → N `ImportJob` 1 → N filas y errores de staging.
 - `RegistroAuditoria`, `IdempotencyKey` y `Notificacion` son conceptos transversales vinculados al actor/operación.
+## Diagrama entidad-relación
+
+El diagrama muestra los agregados principales y sus cardinalidades. Las tablas puente y los tokens de refresh son artefactos de persistencia: `preceptor_curso` aparece como relación y `RefreshToken` se omite por no ser una entidad de dominio.
+
+```mermaid
+erDiagram
+    INSTITUCION ||--o{ CICLO_LECTIVO : tiene
+    CICLO_LECTIVO ||--o{ CURSO_DIVISION_TURNO : contiene
+    CICLO_LECTIVO ||--o{ PERIODO : incluye
+
+    USERS ||--o| ALUMNO : "perfil alumno"
+    USERS ||--o| DOCENTE : "perfil docente"
+    USERS ||--o| TUTOR : "perfil tutor"
+    USERS ||--o| PRECEPTOR : "perfil preceptor"
+
+    CURSO_DIVISION_TURNO ||--o{ ALUMNO : agrupa
+    PRECEPTOR }o--o{ CURSO_DIVISION_TURNO : "preceptor_curso"
+    CURSO_DIVISION_TURNO ||--o{ MATERIA : ofrece
+    DOCENTE ||--o{ MATERIA : titular
+
+    ALUMNO ||--o{ INSCRIPCION : realiza
+    MATERIA ||--o{ INSCRIPCION : recibe
+
+    TUTOR ||--o{ TUTOR_ALUMNO : vincula
+    ALUMNO ||--o{ TUTOR_ALUMNO : vincula
+
+    MATERIA ||--o{ CLASE : planifica
+    CLASE ||--o{ ASISTENCIA : registra
+    ALUMNO ||--o{ ASISTENCIA : posee
+
+    PERIODO ||--o{ INSTANCIA_EVALUACION : contiene
+    MATERIA ||--o{ INSTANCIA_EVALUACION : evalua
+    INSTANCIA_EVALUACION ||--o{ CALIFICACION : genera
+    ALUMNO ||--o{ CALIFICACION : recibe
+
+    PERIODO ||--o{ REGLA_CONDICION : aplica
+    MATERIA |o--o{ REGLA_CONDICION : "regla por materia"
+    PERIODO ||--o| PERIODO_CIERRE : cierra
+    PERIODO_CIERRE ||--o{ CONDICION_ALUMNO : congela
+    ALUMNO ||--o{ CONDICION_ALUMNO : posee
+    MATERIA ||--o{ CONDICION_ALUMNO : detalla
+
+    USERS ||--o{ IMPORT_JOB : crea
+    IMPORT_JOB ||--o{ IMPORT_ROW : procesa
+    IMPORT_JOB ||--o{ IMPORT_ERROR : reporta
+
+    USERS ||--o{ AUDITORIA : actua
+    USERS ||--o{ NOTIFICACION : recibe
+    USERS ||--o{ IDEMPOTENCY_KEY : usa
+
+    USERS {
+        string id PK
+        string role
+        string username
+        string dni
+        boolean isActive
+        boolean mustChangePassword
+        int version
+    }
+    ALUMNO {
+        string id PK
+        string cursoId FK
+        string fechaNacimiento
+        int version
+    }
+    CURSO_DIVISION_TURNO {
+        string id PK
+        string cicloId FK
+        string curso
+        string division
+        string turno
+        int capacidadMaxima
+    }
+    MATERIA {
+        string id PK
+        string cursoId FK
+        string docenteId FK
+        string nombre
+    }
+    INSCRIPCION {
+        string id PK
+        string alumnoId FK
+        string materiaId FK
+        string estado
+    }
+    CLASE {
+        string id PK
+        string materiaId FK
+        string fecha
+        string estado
+    }
+    ASISTENCIA {
+        string id PK
+        string claseId FK
+        string alumnoId FK
+        string estado
+    }
+    PERIODO {
+        string id PK
+        string cicloId FK
+        string tipo
+        string estado
+    }
+    INSTANCIA_EVALUACION {
+        string id PK
+        string materiaId FK
+        string periodoId FK
+        string tipo
+        string peso
+    }
+    CALIFICACION {
+        string id PK
+        string instanciaId FK
+        string alumnoId FK
+        string valor
+        string estado
+    }
+    CONDICION_ALUMNO {
+        string id PK
+        string periodoId FK
+        string alumnoId FK
+        string materiaId FK
+        string resultado
+    }
+    IMPORT_JOB {
+        string id PK
+        string creadoPor FK
+        string estado
+        string fileHash
+        int totalRows
+    }
+    NOTIFICACION {
+        string id PK
+        string destinatarioId FK
+        string tipo
+        string estado
+        string dedupeKey
+    }
+```
 
 ## Identidad
+
 
 Fuente: `src/domain/identity/entities.ts`.
 

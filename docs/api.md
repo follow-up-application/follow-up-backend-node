@@ -19,7 +19,7 @@ Notas comunes:
 
 - Todos los schemas son `.strict()`: los campos desconocidos en params, query o body se rechazan.
 - Todas las rutas bajo `/api/v1` están sujetas a rate limiting global.
-- Las mutaciones marcadas con `Idempotency-Key` requieren esa cabecera (8–255 caracteres). En replay responden el mismo cuerpo con `Idempotent-Replayed: true`.
+- Las mutaciones marcadas con `Idempotency-Key` requieren esa cabecera (8–255 caracteres). En replay responden el mismo cuerpo con `Idempotent-Replayed: true`; ver [Idempotencia](#idempotencia).
 - Muchos endpoints aplican, además del rol, restricciones de propiedad/alcance (ej. "docente titular de la materia", "tutor vinculado", "solo su propio registro"). Se indican bajo cada tabla.
 - Los tokens con `password_change_only` o usuarios con `mustChangePassword` solo pueden usar `GET /me`, `PUT /password` y logout; el resto devuelve `403 PASSWORD_CHANGE_REQUIRED`.
 - Toda respuesta incluye la cabecera `X-Request-Id`. La forma de error estándar es `{ error: { code, message, details? }, message, requestId }`; ver [Errores](#errores).
@@ -320,6 +320,76 @@ No son respuestas HTTP: se consultan en `error_code` / `error_message` de `Impor
 | --- | --- |
 | Job | `IMPORT_INVALID_FILE`, `IMPORT_LIMIT_EXCEEDED`, `IMPORT_FAILED`, `IMPORT_WORKER_FAILED`, `NO_ACTIVE_CYCLE` |
 | Filas CSV | `REQUIRED`, `INVALID_DNI`, `INVALID_DATE`, `INVALID_COURSE`, `INVALID_DIVISION`, `INVALID_TURNO`, `INVALID_RELATIONSHIP`, `SAME_DNI`, `DUPLICATE_DNI`, `DUPLICATE_TUTOR_DNI`, `COURSE_NOT_FOUND`, `CAPACITY_EXCEEDED`, `DNI_IN_USE`, `NO_ACTIVE_CYCLE` |
+
+## Idempotencia
+
+### Cabecera y alcance
+
+- Cabecera obligatoria en los 19 endpoints listados abajo: `Idempotency-Key: <string de 8 a 255 caracteres>`.
+- Alcance de la clave (`scopeKey`):
+  - Rutas autenticadas: `user:<actorId>`. El propietario de la clave queda registrado como `actorId`.
+  - `POST /api/v1/tutores/register` (público): `public:tutor-code:<sha256(codigo)>`; el `codigo` del body reemplaza al actor.
+- Identificador de pedido (`requestHash`): `sha256("<METHOD> <baseUrl><path> <body canónico> <extra>")`.
+  - El body se canonicaliza: claves de objeto ordenadas, valores `undefined` omitidos, arrays en su orden original, `Buffer` reemplazado por `sha256(contenido)`.
+  - Reordenar las claves JSON del body **no** cambia el hash; cambiar el método, la ruta, un valor del body o el contenido del CSV sí.
+  - `extra` se usa solo en importaciones: hash del contenido del CSV (`res.locals.csvHash`), por lo que reutilizar la misma clave con otro archivo se considera pedido distinto.
+- TTL: `IDEMPOTENCY_TTL_HOURS` (default 24 h). Si la clave expiró, se libera y el pedido se procesa como nuevo. El repositorio expone `deleteExpired()`, pero no hay un job programado que lo invoque: la expiración se resuelve al consultar la clave.
+
+### Flujo
+
+1. Validar presencia y longitud de `Idempotency-Key`; si falta o está fuera de rango → `400 IDEMPOTENCY_KEY_REQUIRED`.
+2. Resolver `scopeKey` y calcular `requestHash`.
+3. Buscar la clave:
+   - Si existe y su hash difiere → `409 IDEMPOTENCY_KEY_REUSED`.
+   - Si existe, coincide, no expiró y está `completada` → se devuelve el `statusCode` y `responseBody` guardados, con `Idempotent-Replayed: true`. **No se ejecuta el handler.**
+   - Si existe, coincide y está `procesando` → `409 CONFLICT` ("La operación con esa Idempotency-Key todavía está en proceso.").
+   - Si expiró → se elimina y se continúa.
+4. Reservar la clave con `INSERT ... ON CONFLICT (scope_key, clave) DO NOTHING` en estado `procesando`. Si otra petición la reservó primero, se repite el paso 3; si no se puede resolver → `409 CONFLICT` ("No se pudo reservar la Idempotency-Key.").
+5. Al terminar, solo las respuestas `2xx` se marcan `completada` y se guardan (status, body y `resourceId` si el body tiene `id` string). Las respuestas de error se liberan, por lo que **se puede reintentar con la misma clave**.
+
+Ejemplo de replay:
+
+```http
+POST /api/v1/admins HTTP/1.1
+Idempotency-Key: 4f3a9c2e-8b11-4d0a-9f77-2c6e1a5b0d33
+Content-Type: application/json
+
+{"first_name":"Ana","last_name":"Pérez","username":"ana.perez","password":"Secreto123!"}
+```
+
+```http
+HTTP/1.1 201 Created
+Idempotent-Replayed: true
+X-Request-Id: 9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d
+
+{"id":"...","first_name":"Ana","last_name":"Pérez", ...}
+```
+
+### Endpoints que la requieren
+
+| Método | Ruta | Alcance | Respuesta en replay |
+| --- | --- | --- | --- |
+| POST | `/api/v1/tutores/register` | `public:tutor-code:<sha256(codigo)>` (+ rate limit público) | `201 · Tutor` |
+| POST | `/api/v1/admins` | `user:<actorId>` | `201 · User` |
+| POST | `/api/v1/alumnos` | `user:<actorId>` | `201 · Alumno` |
+| POST | `/api/v1/docentes` | `user:<actorId>` | `201 · Docente` |
+| POST | `/api/v1/tutores` | `user:<actorId>` | `201 · Tutor` |
+| POST | `/api/v1/preceptores` | `user:<actorId>` | `201 · Preceptor` |
+| PUT | `/api/v1/preceptores/:id/cursos` | `user:<actorId>` | `200 · Preceptor` |
+| POST | `/api/v1/materias` | `user:<actorId>` | `201 · Materia` |
+| POST | `/api/v1/inscripciones` | `user:<actorId>` | `201 · Inscripcion` |
+| POST | `/api/v1/clases` | `user:<actorId>` | `201 · Clase` |
+| POST | `/api/v1/asistencias` | `user:<actorId>` | `201 · Asistencia` |
+| POST | `/api/v1/periodos` | `user:<actorId>` | `201 · Periodo` |
+| POST | `/api/v1/periodos/:id/cerrar` | `user:<actorId>` | `200 · CierrePeriodo` |
+| POST | `/api/v1/instancias-evaluacion` | `user:<actorId>` | `201 · Instancia` |
+| POST | `/api/v1/calificaciones` | `user:<actorId>` | `201 · Calificacion` |
+| POST | `/api/v1/calificaciones/:id/anular` | `user:<actorId>` | `200 · Calificacion` |
+| POST | `/api/v1/calificaciones/:id/rectificar` | `user:<actorId>` | `200 · Calificacion` |
+| POST | `/api/v1/imports/alumnos` | `user:<actorId>` + hash del CSV | `202 · ImportJob` (no duplica el job) |
+| POST | `/api/v1/cursos` (y alias `/api/v1/cursoDivisionTurno`) | `user:<actorId>` | `201 · Curso` |
+
+Errores propios: `400 IDEMPOTENCY_KEY_REQUIRED` (cabecera ausente o longitud inválida; en rutas públicas sin `publicScope` también `401 UNAUTHENTICATED`), `409 IDEMPOTENCY_KEY_REUSED` (mismo scope y clave con distinto pedido) y `409 CONFLICT` (operación en proceso o carrera al reservar). Ver [Errores](#errores).
 
 ## Endpoints
 

@@ -380,6 +380,40 @@ Estados: `pendiente`, `enviada`, `fallida`.
 | `pendiente` | `fallida` | `markFailed()` con `intentos >= 3` | Agota reintentos; estado terminal. |
 | `enviada` o `fallida` | `pendiente` | — | No existe reprocesamiento automático. |
 
+## Correspondencia con tablas PostgreSQL
+
+El schema completo está en `src/infra/db/migrations/1700000000000_initial.sql` y la traducción fila ↔ entidad en `src/infra/db/mappers.ts`.
+
+| Entidad / concepto de dominio | Tabla(s) | Observación |
+|---|---|---|
+| `User` | `users` (:46) | Cuenta base con `role`, credenciales, estado y `version`. |
+| `Alumno` | `alumnos` (:96) | Perfil con el mismo `id` que `users`; referencia `curso_division_turno_id`. |
+| `Docente` | `docentes` (:107) | Perfil con el mismo `id` que `users`; curso de referencia opcional. |
+| `Tutor` | `tutores` (:119) | Perfil con el mismo `id` que `users`. |
+| `Preceptor` | `preceptores` (:158) | Perfil con el mismo `id` que `users`. |
+| Relación Preceptor–Curso | `preceptor_curso` (:168) | Tabla puente M:N; no existe entidad de dominio propia. |
+| `TutorAlumno` | `tutor_alumno` (:128) | Vínculo con código, relación y estado de registro. |
+| `Institucion` | `instituciones` (:11) | Datos de la institución. |
+| `CicloLectivo` | `ciclos_lectivos` (:28) | Ciclo anual con estado y rango de fechas. |
+| `CursoDivisionTurno` | `curso_division_turno` (:79) | Curso/división/turno por ciclo. |
+| `Materia` | `materias` (:179) | Materia de un curso con docente titular. |
+| `Inscripcion` | `inscripciones` (:194) | Relación alumno–materia con estado. |
+| `Clase` | `clases` (:211) | Encuentro de clase de una materia. |
+| `Asistencia` | `asistencias` (:231) | Registro por clase y alumno. |
+| `Periodo` | `periodos` (:250) | Período evaluativo del ciclo. |
+| `ReglaCondicion` | `reglas_condicion` (:268) | Regla general o por materia dentro del período. |
+| `InstanciaEvaluacion` | `instancias_evaluacion` (:291) | Evaluación de materia/período con peso. |
+| `Calificacion` | `calificaciones` (:311) | Nota por instancia y alumno. |
+| `PeriodoCierre` | `periodo_cierres` (:337) | Cierre 1:1 del período. |
+| `CondicionAlumno` | `condiciones_alumno` (:348) | Snapshot por período/alumno/materia. |
+| `ImportJob` | `import_jobs` (:434) | Job de importación con lease, heartbeat y contadores. |
+| `ImportRowProps` | `import_rows` (:470) | Staging de filas parseadas. |
+| `ImportErrorProps` | `import_errors` (:481) | Staging de errores por fila/columna. |
+| `RegistroAuditoria` | `auditoria` (:370) | Append-only; trigger impide `UPDATE`/`DELETE`. |
+| `IdempotencyKey` | `idempotency_keys` (:414) | Clave, estado y respuesta guardada. |
+| `Notificacion` | `notificaciones` (:493) | Destinatario, estado, intentos y `dedupe_key`. |
+| `RefreshToken` | `auth_refresh_tokens` (:398) | Contrato de puerto, no entidad con comportamiento. |
+
 ## Notas de persistencia
 
 - Los campos `version` se actualizan con cláusulas `WHERE version = $n`; si otra transacción ganó, se lanza `StaleVersionError`.

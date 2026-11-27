@@ -1,6 +1,6 @@
 # Ataque cruzado entre grupos
 
-Plantilla y bitácora para el ejercicio de seguridad donde cada grupo usa sus credenciales/tokens contra el despliegue del otro grupo. La bitácora de referencia se apoya en `tests/security/access-control.test.ts`; en la sesión presencial debe completarse con la fila real correspondiente.
+Plantilla y bitácora para el ejercicio de seguridad donde cada grupo usa sus credenciales/tokens contra el despliegue del otro grupo. La bitácora de referencia se apoya en [tests/security/access-control.test.ts](../tests/security/access-control.test.ts); en la sesión presencial debe completarse con la fila real correspondiente.
 
 ## Alcance
 
@@ -52,7 +52,7 @@ La matriz asume un token válido del rol indicado contra un recurso ajeno del ot
 
 Notas: `login`, `refresh`, `validarCodigo` y `register` son públicos. En inscripciones, el preceptor recibe `403` al listar y `404` al consultar un id ajeno. En docentes, la matriz considera el detalle; `GET /docentes/:id/materias` es de lectura autenticada para todos los roles. `POST /calificaciones/:id/rectificar` es exclusivo de `administrador` (`403` para preceptor y docente aunque puedan cargar o anular). `GET /asistencias` sin filtros devuelve todas las asistencias; no usar ese atajo para inferir permisos por rol.
 
-Fuente: tabla de endpoints de `docs/api.md:830-1025` y asserts de `tests/security/access-control.test.ts:45-340`.
+Fuente: tabla de endpoints de `docs/api.md:830-1025` y asserts de [tests/security/access-control.test.ts:45-340](../tests/security/access-control.test.ts#L45-L340).
 
 ## Hipótesis
 
@@ -72,7 +72,7 @@ Cada intento debe dejar evidencia reproducible y enlazada a su ID de bitácora:
 
 | Tipo | Qué capturar | Dónde |
 | --- | --- | --- |
-| Pedido | Método, URL completa, headers relevantes (`Authorization` enmascarado, `Idempotency-Key`, `X-Request-Id`) y body. | Postman/curl o `tests/security/access-control.test.ts`. |
+| Pedido | Método, URL completa, headers relevantes (`Authorization` enmascarado, `Idempotency-Key`, `X-Request-Id`) y body. | Postman/curl o [tests/security/access-control.test.ts](../tests/security/access-control.test.ts). |
 | Respuesta | Código HTTP, `error.code`, `requestId`, headers (`Retry-After`) y cuerpo sin secretos. | Captura o archivo de log. |
 | Contexto | Rol atacante, IP de origen, `baseUrl`, fecha/hora e IDs del fixture ajeno. | Bitácora. |
 | Estado global | Para prototype pollution, comprobar que `{}` no tenga `polluted`. | Assert o consola. |
@@ -85,7 +85,18 @@ Los tokens se registran enmascarados: no pegar `refresh_token`, contraseñas ni 
 - Éxito del ejercicio: cada intento obtiene el código descrito en la matriz y en la bitácora de referencia, sin accesos de lectura o escritura indebidos.
 - Fallo a investigar: `200`, `201`, `202` o `204` donde la matriz indica `401`, `403` o `404`; datos ajenos devueltos; `password_hash`, `$argon2` o stack traces en la respuesta.
 - Criterio de cierre: vector detenido, grupo defensor y docente notificados, evidencia conservada y fila de bitácora marcada como `Confirmado`, `no reproducido` o `mitigado`.
-- La corrida de referencia no registró accesos indebidos: ver la bitácora de referencia y los asserts de `tests/security/access-control.test.ts:45-340`.
+- La corrida de referencia no registró accesos indebidos: ver la bitácora de referencia y los asserts de [tests/security/access-control.test.ts:45-340](../tests/security/access-control.test.ts#L45-L340).
+
+## Tests de seguridad existentes
+
+| Archivo | Qué cubre | Ejecución |
+| --- | --- | --- |
+| [tests/security/access-control.test.ts](../tests/security/access-control.test.ts) | Autenticación, refresh, IDOR, RBAC, endurecimiento de entradas y rate limit; asserts en `:45-340`. | `npm run test:security` |
+| [tests/helpers/http.ts](../tests/helpers/http.ts) | `SEED`, `CREDENTIALS`, `enableSeedLogins()` (`:39-46`) y `login()`. | Uso interno del test |
+| [tests/helpers/fixtures.ts](../tests/helpers/fixtures.ts) | `createForeignFixture()` (`:53-117`) para recursos ajenos. | Uso interno del test |
+| [tests/global-setup.ts](../tests/global-setup.ts) | Reset de la base de test; exige `DATABASE_TEST_URL` en `:23`. | `npm run test:security` |
+
+Requisito local: `DATABASE_TEST_URL=postgres://follow:follow@localhost:5432/follow_test` y base `follow_test` creada. Para reproducción manual, usar la colección [follow-up-api.postman_collection.json](postman/follow-up-api.postman_collection.json).
 
 ## Participantes
 
@@ -103,9 +114,9 @@ Los usuarios seed son `admin`, `preceptor`, `docente`, `alumno` y `tutor` según
 
 - Node.js 22+, PostgreSQL 16 (Docker), `npm ci`, `npm run setup`, `npm run dev`.
 - `baseUrl` por defecto: `http://localhost:3000`. En el cruce entre grupos se reemplaza por la IP/puerto publicados.
-- Usuarios de prueba: ver tabla de `README.md`. Los roles `preceptor`, `docente` y `alumno` tienen `must_change_password=true`; el test los habilita con `enableSeedLogins()` en `tests/helpers/http.ts:39-46`.
-- Fixture de "grupo ajeno": `createForeignFixture()` en `tests/helpers/fixtures.ts:53-117` crea curso `7-Z-Tarde`, docente DNI `30999001`, alumno DNI `40999002`, materia `9001`, clase e instancia ajenas.
-- Tokens de la corrida de referencia: se obtienen en `tests/security/access-control.test.ts:20-29` con IPs `10.20.0.1` a `10.20.0.5`.
+- Usuarios de prueba: ver tabla de `README.md`. Los roles `preceptor`, `docente` y `alumno` tienen `must_change_password=true`; el test los habilita con `enableSeedLogins()` en [tests/helpers/http.ts:39-46](../tests/helpers/http.ts#L39-L46).
+- Fixture de "grupo ajeno": `createForeignFixture()` en [tests/helpers/fixtures.ts:53-117](../tests/helpers/fixtures.ts#L53-L117) crea curso `7-Z-Tarde`, docente DNI `30999001`, alumno DNI `40999002`, materia `9001`, clase e instancia ajenas.
+- Tokens de la corrida de referencia: se obtienen en [tests/security/access-control.test.ts:20-29](../tests/security/access-control.test.ts#L20-L29) con IPs `10.20.0.1` a `10.20.0.5`.
 - Ejecución automatizada:
 
 ```bash
@@ -115,7 +126,7 @@ Copy-Item .env.example .env        # PowerShell
 npm run test:security
 ```
 
-La suite reinicia la base de test en `tests/global-setup.ts`; no ejecutarla contra una base compartida o de producción.
+La suite reinicia la base de test en [tests/global-setup.ts](../tests/global-setup.ts); no ejecutarla contra una base compartida o de producción.
 
 ## Bitácora por fase
 
@@ -222,7 +233,7 @@ La bitácora de referencia no registra hallazgos abiertos: todos los vectores fu
 
 ## Bitácora de referencia (evidencia automatizada)
 
-Los resultados son los asserts de `tests/security/access-control.test.ts`. "OK" significa que el servidor respondió como se esperaba y el acceso fue bloqueado.
+Los resultados son los asserts de [tests/security/access-control.test.ts](../tests/security/access-control.test.ts). "OK" significa que el servidor respondió como se esperaba y el acceso fue bloqueado.
 
 | ID | Vector | Método y ruta | Atacante -> Defensor | Resultado esperado | Referencia | Estado |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -256,4 +267,4 @@ Los resultados son los asserts de `tests/security/access-control.test.ts`. "OK" 
 
 ## Resultado
 
-La suite de referencia no registró accesos indebidos: todos los intentos de autenticación, acceso cruzado, escalada de roles y endurecimiento fueron rechazados con el estado esperado. La ejecución local de `npm run test:security` requiere `DATABASE_TEST_URL` y una base `follow_test` disponible; si falta, Vitest falla en `tests/global-setup.ts:23` antes de correr los casos.
+La suite de referencia no registró accesos indebidos: todos los intentos de autenticación, acceso cruzado, escalada de roles y endurecimiento fueron rechazados con el estado esperado. La ejecución local de `npm run test:security` requiere `DATABASE_TEST_URL` y una base `follow_test` disponible; si falta, Vitest falla en [tests/global-setup.ts:23](../tests/global-setup.ts#L23) antes de correr los casos.

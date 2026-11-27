@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Follow App - Backend Node API",
-    "description": "Colección completa de la API Node (Express) de Follow App.\n\nUso:\n1) Ejecutar primero 'Autenticación / Login' para guardar access_token y refresh_token en las variables de la colección.\n2) Las rutas bajo /api/v1 usan Bearer {{accessToken}} salvo login, refresh, validarCodigo y register.\n3) El script de pre-request genera automáticamente un Idempotency-Key UUID en POST/PUT/PATCH/DELETE.\n4) Los endpoints crean y guardan ids en variables (alumnoId, cursoId, periodoId, etc.) para reutilizarlos en los siguientes requests.\n5) Los endpoints operativos (/health, /ready, /internal/metrics) no llevan el prefijo /api/v1.\n\nAlias disponibles en el servidor: POST /api/v1/login, POST /api/v1/logout y los prefijos /api/v1/cursos y /api/v1/cursoDivisionTurno son equivalentes.",
+    "description": "Colección completa de la API Node (Express) de Follow App.\n\nUso:\n1) Ejecutar primero 'Autenticación / Login' (o su alias) para guardar tokens en accessToken/refreshToken y en la variable por rol correspondiente.\n2) Las rutas bajo /api/v1 usan Bearer {{accessToken}} salvo login, refresh, validarCodigo y register.\n3) El script de pre-request genera un Idempotency-Key UUID por request; para repetir un request con la misma clave, setear reuseIdempotencyKey=true y volver a false antes de otro request.\n4) Los seeds tienen ids y credenciales precargados en variables; los requests de creación usan datos nuevos para no chocar con DNI/email únicos. Los scripts guardan los ids creados.\n5) Los endpoints operativos (/health, /ready, /internal/metrics) no llevan el prefijo /api/v1.\n\nAlias disponibles en el servidor y en esta colección: POST /api/v1/login, POST /api/v1/logout y los prefijos /api/v1/cursos y /api/v1/cursoDivisionTurno son equivalentes.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -15,17 +15,22 @@
       "listen": "prerequest",
       "script": {
         "type": "text/javascript",
-        "exec": [
-          "const method = pm.request.method.toUpperCase();",
-          "if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !pm.request.headers.get('Idempotency-Key')) {",
-          "  const key = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {",
-          "    const r = Math.floor(Math.random() * 16);",
-          "    const v = c === 'x' ? r : ((r & 0x3) | 0x8);",
-          "    return v.toString(16);",
-          "  });",
-          "  pm.request.headers.upsert({ key: 'Idempotency-Key', value: key });",
-          "}"
-        ]
+          "exec": [
+            "const method = pm.request.method.toUpperCase();",
+            "if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !pm.request.headers.get('Idempotency-Key')) {",
+            "  const reuse = String(pm.collectionVariables.get('reuseIdempotencyKey')) === 'true';",
+            "  let key = reuse ? pm.collectionVariables.get('idempotencyKey') : '';",
+            "  if (!key) {",
+            "    key = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {",
+            "      const r = Math.floor(Math.random() * 16);",
+            "      const v = c === 'x' ? r : ((r & 0x3) | 0x8);",
+            "      return v.toString(16);",
+            "    });",
+            "    pm.collectionVariables.set('idempotencyKey', key);",
+            "  }",
+            "  pm.request.headers.upsert({ key: 'Idempotency-Key', value: key });",
+            "}"
+          ]
       }
     }
   ],
@@ -36,25 +41,51 @@
     { "key": "internalMetricsToken", "value": "local-metrics-token" },
     { "key": "loginUsername", "value": "admin" },
     { "key": "loginPassword", "value": "Admin1234!" },
+    { "key": "adminUsername", "value": "admin" },
+    { "key": "adminPassword", "value": "Admin1234!" },
+    { "key": "preceptorUsername", "value": "PRE-30111222-2026" },
+    { "key": "preceptorPassword", "value": "30111222" },
+    { "key": "docenteUsername", "value": "DOC-30222333-2024" },
+    { "key": "docentePassword", "value": "30222333" },
+    { "key": "alumnoUsername", "value": "EST-40123456-2026" },
+    { "key": "alumnoPassword", "value": "40123456" },
+    { "key": "tutorUsername", "value": "laura@example.com" },
+    { "key": "tutorPassword", "value": "Tutor1234!" },
+    { "key": "tutorEmail", "value": "tutor.nuevo@example.com" },
+    { "key": "adminAccessToken", "value": "" },
+    { "key": "adminRefreshToken", "value": "" },
+    { "key": "preceptorAccessToken", "value": "" },
+    { "key": "preceptorRefreshToken", "value": "" },
+    { "key": "docenteAccessToken", "value": "" },
+    { "key": "docenteRefreshToken", "value": "" },
+    { "key": "alumnoAccessToken", "value": "" },
+    { "key": "alumnoRefreshToken", "value": "" },
+    { "key": "tutorAccessToken", "value": "" },
+    { "key": "tutorRefreshToken", "value": "" },
+    { "key": "newPassword", "value": "NuevaClave123!" },
+    { "key": "idempotencyKey", "value": "" },
+    { "key": "reuseIdempotencyKey", "value": "false" },
     { "key": "userId", "value": "" },
-    { "key": "adminId", "value": "" },
-    { "key": "alumnoId", "value": "" },
-    { "key": "docenteId", "value": "" },
-    { "key": "tutorId", "value": "" },
-    { "key": "tutorAlumnoId", "value": "" },
-    { "key": "tutorCodigo", "value": "" },
-    { "key": "tutorDni", "value": "30111222" },
-    { "key": "preceptorId", "value": "" },
-    { "key": "cicloLectivoId", "value": "" },
+    { "key": "adminId", "value": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1" },
+    { "key": "preceptorId", "value": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2" },
+    { "key": "docenteId", "value": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3" },
+    { "key": "alumnoId", "value": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4" },
+    { "key": "tutorId", "value": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5" },
+    { "key": "tutorAlumnoId", "value": "99999999-9999-4999-8999-999999999999" },
+    { "key": "tutorCodigo", "value": "SEED-TUTOR-0001" },
+    { "key": "tutorCodigoRegistro", "value": "" },
+    { "key": "tutorDni", "value": "30123456" },
+    { "key": "cicloLectivoId", "value": "22222222-2222-4222-8222-222222222222" },
     { "key": "cursoId", "value": "1" },
     { "key": "materiaId", "value": "1" },
-    { "key": "claseId", "value": "" },
-    { "key": "asistenciaId", "value": "" },
-    { "key": "periodoId", "value": "" },
-    { "key": "instanciaId", "value": "" },
-    { "key": "calificacionId", "value": "" },
-    { "key": "inscripcionId", "value": "" },
-    { "key": "importJobId", "value": "" }
+    { "key": "claseId", "value": "55555555-5555-4555-8555-555555555551" },
+    { "key": "asistenciaId", "value": "66666666-6666-4666-8666-666666666661" },
+    { "key": "periodoId", "value": "33333333-3333-4333-8333-333333333333" },
+    { "key": "instanciaId", "value": "44444444-4444-4444-8444-444444444441" },
+    { "key": "calificacionId", "value": "77777777-7777-4777-8777-777777777771" },
+    { "key": "inscripcionId", "value": "1" },
+    { "key": "importJobId", "value": "" },
+    { "key": "csvPath", "value": "" }
   ],
   "item": [
     {
@@ -119,8 +150,17 @@
                 "exec": [
                   "if (pm.response.code === 200) {",
                   "  const data = pm.response.json();",
-                  "  if (data.access_token) pm.collectionVariables.set('accessToken', data.access_token);",
-                  "  if (data.refresh_token) pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "  const username = String(pm.collectionVariables.get('loginUsername') || '');",
+                  "  const prefixes = ['admin', 'preceptor', 'docente', 'alumno', 'tutor'];",
+                  "  const role = prefixes.find((prefix) => pm.collectionVariables.get(prefix + 'Username') === username);",
+                  "  if (data.access_token) {",
+                  "    pm.collectionVariables.set('accessToken', data.access_token);",
+                  "    if (role) pm.collectionVariables.set(role + 'AccessToken', data.access_token);",
+                  "  }",
+                  "  if (data.refresh_token) {",
+                  "    pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "    if (role) pm.collectionVariables.set(role + 'RefreshToken', data.refresh_token);",
+                  "  }",
                   "}"
                 ]
               }
@@ -136,7 +176,48 @@
               "raw": "{\n  \"username\": \"{{loginUsername}}\",\n  \"password\": \"{{loginPassword}}\"\n}"
             },
             "url": "{{baseUrl}}/api/v1/auth/login",
-            "description": "Público. Alias: POST /api/v1/login. Usuarios seed: admin/Admin1234!, preceptor/docente/alumno con username PRE-, DOC-, EST- + DNI y contraseña igual al DNI."
+            "description": "Público. Para cambiar de rol, actualizar loginUsername/loginPassword con las variables <rol>Username/<rol>Password. Guarda accessToken/refreshToken y la variable por rol."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (alias /login)",
+          "auth": { "type": "noauth" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  const username = String(pm.collectionVariables.get('loginUsername') || '');",
+                  "  const prefixes = ['admin', 'preceptor', 'docente', 'alumno', 'tutor'];",
+                  "  const role = prefixes.find((prefix) => pm.collectionVariables.get(prefix + 'Username') === username);",
+                  "  if (data.access_token) {",
+                  "    pm.collectionVariables.set('accessToken', data.access_token);",
+                  "    if (role) pm.collectionVariables.set(role + 'AccessToken', data.access_token);",
+                  "  }",
+                  "  if (data.refresh_token) {",
+                  "    pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "    if (role) pm.collectionVariables.set(role + 'RefreshToken', data.refresh_token);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{loginUsername}}\",\n  \"password\": \"{{loginPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/login",
+            "description": "Alias público de POST /api/v1/auth/login. Ejecuta el mismo script de tokens."
           },
           "response": []
         },
@@ -151,8 +232,17 @@
                 "exec": [
                   "if (pm.response.code === 200) {",
                   "  const data = pm.response.json();",
-                  "  if (data.access_token) pm.collectionVariables.set('accessToken', data.access_token);",
-                  "  if (data.refresh_token) pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "  const username = String(pm.collectionVariables.get('loginUsername') || '');",
+                  "  const prefixes = ['admin', 'preceptor', 'docente', 'alumno', 'tutor'];",
+                  "  const role = prefixes.find((prefix) => pm.collectionVariables.get(prefix + 'Username') === username);",
+                  "  if (data.access_token) {",
+                  "    pm.collectionVariables.set('accessToken', data.access_token);",
+                  "    if (role) pm.collectionVariables.set(role + 'AccessToken', data.access_token);",
+                  "  }",
+                  "  if (data.refresh_token) {",
+                  "    pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "    if (role) pm.collectionVariables.set(role + 'RefreshToken', data.refresh_token);",
+                  "  }",
                   "}"
                 ]
               }
@@ -184,17 +274,53 @@
               "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
             },
             "url": "{{baseUrl}}/api/v1/auth/logout",
-            "description": "Requiere Bearer. Responde 204. Alias: POST /api/v1/logout. El body es opcional."
+            "description": "Requiere Bearer. Responde 204. El body es opcional."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout (alias /logout)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/logout",
+            "description": "Alias público de POST /api/v1/auth/logout con el mismo Bearer. Responde 204."
           },
           "response": []
         },
         {
           "name": "Mi sesión (/me)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  const user = data.user || {};",
+                  "  if (user.id) {",
+                  "    pm.collectionVariables.set('userId', user.id);",
+                  "    const prefixes = { administrador: 'admin', preceptor: 'preceptor', docente: 'docente', alumno: 'alumno', tutor: 'tutor' };",
+                  "    const prefix = prefixes[user.role];",
+                  "    if (prefix) pm.collectionVariables.set(prefix + 'Id', user.id);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/api/v1/me",
-            "description": "Devuelve user, perfiles y cursos del usuario autenticado."
+            "description": "Devuelve user, perfiles y cursos del usuario autenticado. Actualiza userId y el id del rol."
           },
           "response": []
         },
@@ -207,7 +333,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"current_password\": \"30111222\",\n  \"new_password\": \"NuevaClave123!\",\n  \"new_password_confirmation\": \"NuevaClave123!\"\n}"
+                  "raw": "{\n  \"current_password\": \"{{loginPassword}}\",\n  \"new_password\": \"{{newPassword}}\",\n  \"new_password_confirmation\": \"{{newPassword}}\"\n}"
             },
             "url": "{{baseUrl}}/api/v1/password",
             "description": "Requiere Bearer. Obligatorio si must_change_password está en true; en ese estado solo se permiten /me, /password y logout."
@@ -352,7 +478,7 @@
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/alumnos?curso_division_turno_id=1&limit=50&offset=0",
+                "url": "{{baseUrl}}/api/v1/alumnos?curso_division_turno_id={{cursoId}}&limit=50&offset=0",
                 "description": "El filtro por curso depende del rol del actor."
               },
               "response": []
@@ -380,7 +506,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"first_name\": \"Juan\",\n  \"last_name\": \"Pérez\",\n  \"dni\": 40555555,\n  \"fecha_nacimiento\": \"2011-05-12\",\n  \"curso_division_turno_id\": 1,\n  \"relationship\": \"padre\",\n  \"tutor_id\": null,\n  \"tutor_first_name\": \"Carlos\",\n  \"tutor_last_name\": \"Pérez\",\n  \"tutor_dni\": 30123456,\n  \"tutor_telephone\": \"3815551234\"\n}"
+                  "raw": "{\n  \"first_name\": \"Juan\",\n  \"last_name\": \"Pérez\",\n  \"dni\": 40555555,\n  \"fecha_nacimiento\": \"2011-05-12\",\n  \"curso_division_turno_id\": {{cursoId}},\n  \"relationship\": \"padre\",\n  \"tutor_id\": null,\n  \"tutor_first_name\": \"Carlos\",\n  \"tutor_last_name\": \"Pérez\",\n  \"tutor_dni\": 30123458,\n  \"tutor_telephone\": \"3815551234\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/alumnos",
                 "description": "Requiere Idempotency-Key. relationship: padre|madre|otra (si otra, enviar otra_relacion)."
@@ -405,10 +531,10 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"first_name\": \"Juan\",\n  \"last_name\": \"Pérez\",\n  \"curso_division_turno_id\": 1,\n  \"version\": 1\n}"
+                   "raw": "{\n  \"first_name\": \"Juan\",\n  \"last_name\": \"Pérez\",\n  \"curso_division_turno_id\": {{cursoId}}\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/alumnos/{{alumnoId}}",
-                "description": "Enviar version para control optimista de concurrencia."
+                "description": "El control optimista se omite en este cuerpo genérico; agregar version con el valor actual del GET para probar StaleVersionError."
               },
               "response": []
             },
@@ -433,7 +559,7 @@
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/alumnos/{{alumnoId}}/inscripciones?materia_id=1&estado=aprobado&limit=50&offset=0"
+                "url": "{{baseUrl}}/api/v1/alumnos/{{alumnoId}}/inscripciones?materia_id={{materiaId}}&estado=aprobado&limit=50&offset=0"
               },
               "response": []
             },
@@ -457,7 +583,7 @@
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/docentes?curso_division_turno_id=1&limit=50&offset=0"
+                "url": "{{baseUrl}}/api/v1/docentes?curso_division_turno_id={{cursoId}}&limit=50&offset=0"
               },
               "response": []
             },
@@ -484,7 +610,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"first_name\": \"María\",\n  \"last_name\": \"López\",\n  \"dni\": 30222333,\n  \"telephone\": \"3815552222\",\n  \"fecha_ingreso\": \"2024-03-01\",\n  \"curso_division_turno_id\": 1\n}"
+                  "raw": "{\n  \"first_name\": \"María\",\n  \"last_name\": \"López\",\n  \"dni\": 30222334,\n  \"telephone\": \"3815552222\",\n  \"fecha_ingreso\": \"2024-03-01\",\n  \"curso_division_turno_id\": {{cursoId}}\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/docentes",
                 "description": "Requiere Idempotency-Key. curso_division_turno_id es opcional (null permitido)."
@@ -509,7 +635,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"telephone\": \"3815559999\",\n  \"version\": 1\n}"
+                  "raw": "{\n  \"telephone\": \"3815559999\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/docentes/{{docenteId}}"
               },
@@ -565,10 +691,10 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"codigo\": \"{{tutorCodigo}}\",\n  \"email\": \"laura@example.com\",\n  \"password\": \"Tutor1234!\",\n  \"password_confirmation\": \"Tutor1234!\"\n}"
+                   "raw": "{\n  \"codigo\": \"{{tutorCodigoRegistro}}\",\n  \"email\": \"tutor.registro@example.com\",\n  \"password\": \"TutorRegistro123!\",\n  \"password_confirmation\": \"TutorRegistro123!\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/tutores/register",
-                "description": "Público pero requiere Idempotency-Key. La clave se scopea por el código enviado."
+                "description": "Público pero requiere Idempotency-Key. Setear tutorCodigoRegistro con un código pendiente no usado (el de seed ya está registrado)."
               },
               "response": []
             },
@@ -590,10 +716,11 @@
                   "script": {
                     "type": "text/javascript",
                     "exec": [
-                      "if (pm.response.code === 201) {",
-                      "  const data = pm.response.json();",
-                      "  if (data.id) pm.collectionVariables.set('tutorId', data.id);",
-                      "}"
+                       "if (pm.response.code === 201) {",
+                       "  const data = pm.response.json();",
+                       "  if (data.id) pm.collectionVariables.set('tutorId', data.id);",
+                       "  if (data.email) pm.collectionVariables.set('tutorEmail', data.email);",
+                       "}"
                     ]
                   }
                 }
@@ -605,7 +732,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"first_name\": \"Laura\",\n  \"last_name\": \"Pérez\",\n  \"dni\": 30111222,\n  \"telephone\": \"3815553333\",\n  \"email\": \"laura@example.com\",\n  \"password\": \"Tutor1234!\"\n}"
+                   "raw": "{\n  \"first_name\": \"Laura\",\n  \"last_name\": \"Pérez\",\n  \"dni\": 30123459,\n  \"telephone\": \"3815553333\",\n  \"email\": \"{{tutorEmail}}\",\n  \"password\": \"TutorNuevo123!\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/tutores",
                 "description": "Requiere Idempotency-Key."
@@ -640,7 +767,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"telephone\": \"3815554444\",\n  \"email\": \"laura@example.com\",\n  \"version\": 1\n}"
+                   "raw": "{\n  \"telephone\": \"3815554444\",\n  \"email\": \"{{tutorEmail}}\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/tutores/{{tutorId}}"
               },
@@ -691,7 +818,7 @@
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/preceptores?curso_division_turno_id=1&limit=50&offset=0",
+                "url": "{{baseUrl}}/api/v1/preceptores?curso_division_turno_id={{cursoId}}&limit=50&offset=0",
                 "description": "Solo administrador."
               },
               "response": []
@@ -760,7 +887,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"telephone\": \"3815557777\",\n  \"employee_code\": \"PRE-004\",\n  \"version\": 1\n}"
+                  "raw": "{\n  \"telephone\": \"3815557777\",\n  \"employee_code\": \"PRE-004\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/preceptores/{{preceptorId}}"
               },
@@ -835,10 +962,10 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"ciclo_lectivo_id\": \"{{cicloLectivoId}}\",\n  \"curso\": 1,\n  \"division\": \"A\",\n  \"turno\": \"Mañana\",\n  \"capacidad_maxima\": 30\n}"
+                   "raw": "{\n  \"ciclo_lectivo_id\": \"{{cicloLectivoId}}\",\n  \"curso\": 3,\n  \"division\": \"C\",\n  \"turno\": \"Tarde\",\n  \"capacidad_maxima\": 30\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/cursos",
-                "description": "Requiere Idempotency-Key. turno: Mañana|Tarde. division: una letra mayúscula."
+                "description": "Requiere Idempotency-Key. turno: Mañana|Tarde. division: 1-10 caracteres."
               },
               "response": []
             },
@@ -878,7 +1005,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"division\": \"A\",\n  \"turno\": \"Mañana\",\n  \"capacidad_maxima\": 35,\n  \"version\": 1\n}"
+                  "raw": "{\n  \"division\": \"A\",\n  \"turno\": \"Mañana\",\n  \"capacidad_maxima\": 35\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/cursos/{{cursoId}}"
               },
@@ -893,6 +1020,89 @@
                 "description": "Responde 204."
               },
               "response": []
+            },
+            {
+              "name": "Crear curso (alias /cursoDivisionTurno)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "  const data = pm.response.json();",
+                      "  if (data.id) pm.collectionVariables.set('cursoId', data.id);",
+                      "  if (data.ciclo_lectivo_id) pm.collectionVariables.set('cicloLectivoId', data.ciclo_lectivo_id);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"ciclo_lectivo_id\": \"{{cicloLectivoId}}\",\n  \"curso\": 3,\n  \"division\": \"C\",\n  \"turno\": \"Tarde\",\n  \"capacidad_maxima\": 30\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/cursoDivisionTurno",
+                "description": "Alias de POST /api/v1/cursos. Requiere Idempotency-Key."
+              },
+              "response": []
+            },
+            {
+              "name": "Alumnos del curso (alias /cursoDivisionTurno)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/cursoDivisionTurno/{{cursoId}}/alumnos"
+              },
+              "response": []
+            },
+            {
+              "name": "Materias del curso (alias /cursoDivisionTurno)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/cursoDivisionTurno/{{cursoId}}/materias"
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener curso (alias /cursoDivisionTurno)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/cursoDivisionTurno/{{cursoId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar curso (alias /cursoDivisionTurno)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"division\": \"C\",\n  \"turno\": \"Tarde\",\n  \"capacidad_maxima\": 35\n}"
+                },
+                "url": "{{baseUrl}}/api/v1/cursoDivisionTurno/{{cursoId}}"
+              },
+              "response": []
+            },
+            {
+              "name": "Eliminar curso (alias /cursoDivisionTurno)",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": "{{baseUrl}}/api/v1/cursoDivisionTurno/{{cursoId}}",
+                "description": "Responde 204."
+              },
+              "response": []
             }
           ]
         },
@@ -904,7 +1114,7 @@
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/materias?curso_division_turno_id=1&docente_id={{docenteId}}&limit=50&offset=0"
+                "url": "{{baseUrl}}/api/v1/materias?curso_division_turno_id={{cursoId}}&docente_id={{docenteId}}&limit=50&offset=0"
               },
               "response": []
             },
@@ -931,7 +1141,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"nombre\": \"Matemática\",\n  \"descripcion\": \"Álgebra y geometría\",\n  \"curso_division_turno_id\": 1,\n  \"docente_id\": \"{{docenteId}}\"\n}"
+                   "raw": "{\n  \"nombre\": \"Física\",\n  \"descripcion\": \"Física aplicada\",\n  \"curso_division_turno_id\": {{cursoId}},\n  \"docente_id\": \"{{docenteId}}\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/materias",
                 "description": "Requiere Idempotency-Key."
@@ -956,7 +1166,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"nombre\": \"Matemática\",\n  \"descripcion\": \"Álgebra, geometría y trigonometría\",\n  \"version\": 1\n}"
+                  "raw": "{\n  \"nombre\": \"Matemática\",\n  \"descripcion\": \"Álgebra, geometría y trigonometría\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/materias/{{materiaId}}"
               },
@@ -1019,7 +1229,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"alumno_id\": \"{{alumnoId}}\",\n  \"materia_id\": 1,\n  \"fecha_inscripcion\": \"2026-03-01\"\n}"
+                  "raw": "{\n  \"alumno_id\": \"{{alumnoId}}\",\n  \"materia_id\": {{materiaId}},\n  \"fecha_inscripcion\": \"2026-03-01\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/inscripciones",
                 "description": "Requiere Idempotency-Key. fecha_inscripcion es opcional."
@@ -1070,7 +1280,7 @@
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/clases?materia_id={{materiaId}}&curso_division_turno_id=1&desde=2026-03-01&hasta=2026-12-31&limit=50&offset=0"
+                "url": "{{baseUrl}}/api/v1/clases?materia_id={{materiaId}}&curso_division_turno_id={{cursoId}}&desde=2026-03-01&hasta=2026-12-31&limit=50&offset=0"
               },
               "response": []
             },
@@ -1097,7 +1307,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"materia_id\": 1,\n  \"fecha\": \"2026-03-02\",\n  \"hora_inicio\": \"08:00\",\n  \"hora_fin\": \"09:30\",\n  \"tema\": \"Introducción al álgebra\"\n}"
+                  "raw": "{\n  \"materia_id\": {{materiaId}},\n  \"fecha\": \"2026-03-02\",\n  \"hora_inicio\": \"08:00\",\n  \"hora_fin\": \"09:30\",\n  \"tema\": \"Introducción a la física\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/clases",
                 "description": "Requiere Idempotency-Key. hora_fin debe ser mayor que hora_inicio."
@@ -1122,7 +1332,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"tema\": \"Ecuaciones lineales\",\n  \"estado\": \"dictada\",\n  \"version\": 1\n}"
+                  "raw": "{\n  \"tema\": \"Ecuaciones lineales\",\n  \"estado\": \"dictada\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/clases/{{claseId}}",
                 "description": "estado: programada|dictada|cancelada."
@@ -1211,7 +1421,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"estado\": \"ausente\",\n  \"motivo\": \"Corrección de registro\",\n  \"version\": 1\n}"
+              "raw": "{\n  \"estado\": \"ausente\",\n  \"motivo\": \"Corrección de registro\"\n}"
             },
             "url": "{{baseUrl}}/api/v1/asistencias/{{asistenciaId}}"
           },
@@ -1258,7 +1468,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"ciclo_lectivo_id\": \"{{cicloLectivoId}}\",\n  \"nombre\": \"Primer trimestre\",\n  \"tipo\": \"trimestre\",\n  \"fecha_inicio\": \"2026-03-01\",\n  \"fecha_fin\": \"2026-06-30\",\n  \"regla_default\": {\n    \"asistencia_minima_pct\": 75,\n    \"nota_minima_regular\": 4,\n    \"nota_minima_promocion\": 7,\n    \"condicion_sin_datos\": \"libre\"\n  }\n}"
+                                     "raw": "{\n  \"ciclo_lectivo_id\": \"{{cicloLectivoId}}\",\n  \"nombre\": \"Segundo trimestre\",\n  \"tipo\": \"trimestre\",\n  \"fecha_inicio\": \"2026-07-01\",\n  \"fecha_fin\": \"2026-12-10\",\n  \"regla_default\": {\n    \"asistencia_minima_pct\": 75,\n    \"nota_minima_regular\": 4,\n    \"nota_minima_promocion\": 7,\n    \"condicion_sin_datos\": \"libre\"\n  }\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/periodos",
                 "description": "Requiere Idempotency-Key. tipo: trimestre|cuatrimestre."
@@ -1283,7 +1493,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"nombre\": \"Primer trimestre\",\n  \"fecha_inicio\": \"2026-03-01\",\n  \"fecha_fin\": \"2026-06-30\",\n  \"version\": 1\n}"
+                   "raw": "{\n  \"nombre\": \"Período actualizado\",\n  \"fecha_inicio\": \"2026-03-01\",\n  \"fecha_fin\": \"2026-06-30\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/periodos/{{periodoId}}"
               },
@@ -1310,7 +1520,7 @@
               "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/v1/periodos/{{periodoId}}/condiciones?materia_id=1&limit=50&offset=0"
+                "url": "{{baseUrl}}/api/v1/periodos/{{periodoId}}/condiciones?materia_id={{materiaId}}&limit=50&offset=0"
               },
               "response": []
             }
@@ -1351,7 +1561,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"materia_id\": 1,\n  \"periodo_id\": \"{{periodoId}}\",\n  \"nombre\": \"Primer parcial\",\n  \"tipo\": \"parcial\",\n  \"peso\": \"40\",\n  \"fecha\": \"2026-04-15\"\n}"
+                  "raw": "{\n  \"materia_id\": {{materiaId}},\n  \"periodo_id\": \"{{periodoId}}\",\n  \"nombre\": \"Parcial de física\",\n  \"tipo\": \"parcial\",\n  \"peso\": \"40\",\n  \"fecha\": \"2026-04-20\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/instancias-evaluacion",
                 "description": "Requiere Idempotency-Key. tipo: parcial|tp|oral|recuperatorio|otro. peso: 0 < peso <= 100."
@@ -1376,7 +1586,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"nombre\": \"Primer parcial\",\n  \"peso\": \"45\",\n  \"version\": 1\n}"
+                   "raw": "{\n  \"nombre\": \"Parcial de física (actualizado)\",\n  \"peso\": \"45\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/instancias-evaluacion/{{instanciaId}}"
               },
@@ -1444,7 +1654,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"valor\": \"9.00\",\n  \"version\": 1,\n  \"motivo\": \"Corrección de carga\"\n}"
+                  "raw": "{\n  \"valor\": \"9.00\",\n  \"motivo\": \"Corrección de carga\"\n}"
                 },
                 "url": "{{baseUrl}}/api/v1/calificaciones/{{calificacionId}}"
               },
@@ -1524,8 +1734,8 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "src": "",
-                  "description": "CSV de alumnos. También se acepta text/csv crudo como body."
+                  "src": "{{csvPath}}",
+                  "description": "Ruta local del CSV (variable csvPath) o seleccionar el archivo en el selector de Body. También se acepta text/csv crudo."
                 }
               ]
             },

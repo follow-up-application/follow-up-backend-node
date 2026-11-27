@@ -117,7 +117,58 @@ npm run test:security
 
 La suite reinicia la base de test en `tests/global-setup.ts`; no ejecutarla contra una base compartida o de producción.
 
-## Plantilla de bitácora (completar por intento)
+## Bitácora por fase
+
+Completar una fila por fase. La fase "durante" se detalla después con la plantilla por intento; la bitácora de referencia al final del documento cubre esa fase con la corrida automatizada.
+
+### Previa al ataque
+
+| Campo | Contenido |
+| --- | --- |
+| ID de sesión | `ATAQUE-YYYYMMDD-<GRUPO>` |
+| Fecha/hora de inicio | `YYYY-MM-DD HH:mm` |
+| Atacante / defensor | Grupos y responsables |
+| `baseUrl` acordado | `http://<IP>:3000` |
+| Alcance confirmado | Endpoints permitidos y reglas de compromiso aceptadas |
+| Credenciales preparadas | Usuarios seed y tokens enmascarados por rol |
+| Fixture ajeno | IDs del fixture creado o proporcionado por el defensor |
+| Variables Postman | `reuseIdempotencyKey=false`, `importIdempotencyKey`, `tutorCodigoRegistro`, tokens por rol |
+| Estado del entorno | `/health` 200, `/ready` 200, versión o commit desplegado |
+| Evidencia inicial | Captura de `/health`, `/ready` y hash del commit |
+
+### Durante el ataque
+
+| Campo | Contenido |
+| --- | --- |
+| ID del intento | `AUT-01`, `IDOR-03`, etc. |
+| Fecha/hora | `YYYY-MM-DD HH:mm` |
+| Hipótesis | `H-AUT`, `H-IDOR`, etc. |
+| Vector y rol atacante | Token, IDOR, RBAC, idempotencia o validación; rol usado |
+| Método y ruta | `GET /api/v1/...` |
+| Actor/credencial | Usuario y token enmascarado |
+| Resultado esperado | Código HTTP y `error.code` según la matriz |
+| Resultado obtenido | Código HTTP, `error.code` y `requestId` |
+| Evidencia | Postman/curl, captura o archivo de log |
+| Impacto | Ninguno / lectura indebida / escritura indebida |
+| Estado | Confirmado / no reproducido / mitigado |
+
+Repetir esta tabla por cada intento; el detalle mínimo exigido está en la plantilla siguiente.
+
+### Posterior al ataque
+
+| Campo | Contenido |
+| --- | --- |
+| Fecha/hora de cierre | `YYYY-MM-DD HH:mm` |
+| Intentos ejecutados | Cantidad total |
+| Accesos indebidos | `0` o lista de IDs de intentos |
+| Hallazgos | Resumen de vulnerabilidades confirmadas |
+| Notificación | Defensor y docente: fecha/hora y canal |
+| Limpieza | Logout, rotación de tokens, borrado de fixtures temporales y restauración de variables |
+| Evidencia archivada | Ruta o nombre de archivo de capturas y logs |
+| Estado final | Cerrado / abierto por hallazgo |
+| Acciones correctivas | Cambios propuestos o aplicados y responsable |
+
+## Plantilla de bitácora durante el ataque (completar por intento)
 
 | Campo | Contenido |
 | --- | --- |

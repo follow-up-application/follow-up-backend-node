@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Follow App - Backend Node API",
-    "description": "Colección completa de la API Node (Express) de Follow App.\n\nUso:\n1) Ejecutar primero 'Autenticación / Login' (o su alias) para guardar tokens en accessToken/refreshToken y en la variable por rol correspondiente.\n2) Las rutas bajo /api/v1 usan Bearer {{accessToken}} salvo login, refresh, validarCodigo y register.\n3) El script de pre-request genera un Idempotency-Key UUID por request; para repetir un request con la misma clave, setear reuseIdempotencyKey=true y volver a false antes de otro request.\n4) Los seeds tienen ids y credenciales precargados en variables; los requests de creación usan datos nuevos para no chocar con DNI/email únicos. Los scripts guardan los ids creados.\n5) Los endpoints operativos (/health, /ready, /internal/metrics) no llevan el prefijo /api/v1.\n\nAlias disponibles en el servidor y en esta colección: POST /api/v1/login, POST /api/v1/logout y los prefijos /api/v1/cursos y /api/v1/cursoDivisionTurno son equivalentes.",
+    "description": "Colección completa de la API Node (Express) de Follow App.\n\nUso:\n1) Ejecutar primero 'Autenticación / Login' (o su alias) para guardar tokens en accessToken/refreshToken y en la variable por rol correspondiente.\n2) Las rutas bajo /api/v1 usan Bearer {{accessToken}} salvo login, refresh, validarCodigo y register.\n3) El script de pre-request genera un Idempotency-Key UUID por request; para repetir un request con la misma clave, setear reuseIdempotencyKey=true y volver a false antes de otro request.\n4) Los seeds tienen ids y credenciales precargados en variables; los requests de creación usan datos nuevos para no chocar con DNI/email únicos. Los scripts guardan los ids creados.\n5) Los endpoints operativos (/health, /ready, /internal/metrics) no llevan el prefijo /api/v1.\n6) La carpeta 08 - Casos de error valida 401, 403, 409 de idempotencia y 422 con pm.test.\n\nAlias disponibles en el servidor y en esta colección: POST /api/v1/login, POST /api/v1/logout y los prefijos /api/v1/cursos y /api/v1/cursoDivisionTurno son equivalentes.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -85,7 +85,8 @@
     { "key": "calificacionId", "value": "77777777-7777-4777-8777-777777777771" },
     { "key": "inscripcionId", "value": "1" },
     { "key": "importJobId", "value": "" },
-    { "key": "csvPath", "value": "" }
+    { "key": "csvPath", "value": "" },
+    { "key": "errorIdempotencyKey", "value": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" }
   ],
   "item": [
     {
@@ -1774,6 +1775,228 @@
             "header": [],
             "url": "{{baseUrl}}/api/v1/auditoria?entidad=calificaciones&entidad_id={{calificacionId}}&limit=50&offset=0",
             "description": "entidad y entidad_id son opcionales. El registro de auditoría es append-only."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "08 - Casos de error",
+      "description": "Ejecutar en orden. El caso 403 necesita el login de tutor de esta carpeta; el caso 409 necesita un Login admin previo.",
+      "item": [
+        {
+          "name": "401 - Sin token",
+          "auth": { "type": "noauth" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sin token', function () {",
+                  "  pm.response.to.have.status(401);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.code).to.eql('UNAUTHENTICATED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/me",
+            "description": "GET /me sin Authorization debe responder 401 UNAUTHENTICATED."
+          },
+          "response": []
+        },
+        {
+          "name": "401 - Token inválido",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "token-invalido", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 token inválido', function () {",
+                  "  pm.response.to.have.status(401);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.code).to.eql('UNAUTHENTICATED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/me",
+            "description": "Bearer inválido debe responder 401 UNAUTHENTICATED. No modifica accessToken."
+          },
+          "response": []
+        },
+        {
+          "name": "Login tutor (para 403)",
+          "auth": { "type": "noauth" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.access_token) pm.collectionVariables.set('tutorAccessToken', data.access_token);",
+                  "  if (data.refresh_token) pm.collectionVariables.set('tutorRefreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{tutorUsername}}\",\n  \"password\": \"{{tutorPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "Obtiene un token de tutor sin reemplazar el accessToken general."
+          },
+          "response": []
+        },
+        {
+          "name": "403 - Rol sin permiso",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              { "key": "token", "value": "{{tutorAccessToken}}", "type": "string" }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 rol sin permiso', function () {",
+                  "  pm.response.to.have.status(403);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.code).to.eql('FORBIDDEN');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users?limit=50&offset=0",
+            "description": "Un tutor no puede listar usuarios: GET /users requiere administrador."
+          },
+          "response": []
+        },
+        {
+          "name": "409 - Idempotencia: primera request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Primera request con la Idempotency-Key', function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{errorIdempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Error\",\n  \"last_name\": \"Idempotencia\",\n  \"username\": \"error.idempotencia\",\n  \"password\": \"ErrorTest123!\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admins",
+            "description": "Reserva errorIdempotencyKey con este body. Requiere Login admin."
+          },
+          "response": []
+        },
+        {
+          "name": "409 - Idempotencia: misma key, otro body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Idempotency-Key reutilizada', function () {",
+                  "  pm.response.to.have.status(409);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.code).to.eql('IDEMPOTENCY_KEY_REUSED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{errorIdempotencyKey}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Error\",\n  \"last_name\": \"Idempotencia\",\n  \"username\": \"error.idempotencia.otro\",\n  \"password\": \"ErrorTest123!\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admins",
+            "description": "Misma key con body distinto: el middleware responde 409 IDEMPOTENCY_KEY_REUSED antes del handler."
+          },
+          "response": []
+        },
+        {
+          "name": "422 - Validación de body",
+          "auth": { "type": "noauth" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 error de validación', function () {",
+                  "  pm.response.to.have.status(422);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.error.code).to.eql('VALIDATION_ERROR');",
+                  "  pm.expect(body.error.details).to.be.an('array');",
+                  "  pm.expect(body.error.details.length).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "Login con body vacío: Zod responde 422 VALIDATION_ERROR con details."
           },
           "response": []
         }

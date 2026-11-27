@@ -168,6 +168,41 @@ Repetir esta tabla por cada intento; el detalle mínimo exigido está en la plan
 | Estado final | Cerrado / abierto por hallazgo |
 | Acciones correctivas | Cambios propuestos o aplicados y responsable |
 
+## Plantilla de hallazgos (completar por vulnerabilidad confirmada)
+
+| Campo | Contenido |
+| --- | --- |
+| ID | `HAL-01`, `HAL-02`, etc. |
+| Título | Nombre breve del hallazgo |
+| Intento relacionado | `AUT-01`, `IDOR-03`, etc. |
+| Hipótesis | `H-AUT`, `H-IDOR`, etc., que se confirmó |
+| Severidad | Crítica / Alta / Media / Baja |
+| Criterio | Impacto, alcance y facilidad de explotación |
+| Clasificación | CWE / OWASP Top 10 si aplica |
+| Recurso | Método, ruta y parámetros afectados |
+| Actor | Rol atacante y token enmascarado |
+| Resultado esperado | Código HTTP y `error.code` según la matriz |
+| Resultado obtenido | Código HTTP, cuerpo relevante y `requestId` |
+| Reproducción | Precondiciones, pasos numerados, request exacto y respuesta |
+| Evidencia | Captura, log o test automatizado sin secretos |
+| Impacto | Lectura indebida / escritura indebida / escalada / fuga de datos / denegación |
+| Causa raíz | Validación, alcance, middleware o configuración faltante |
+| Corrección | Control a agregar, archivo o función a modificar y criterio de aceptación |
+| Verificación | Cómo demostrar la mitigación y test de regresión asociado |
+| Estado | Abierto / en corrección / mitigado / cerrado |
+| Responsable y fecha | Grupo defensor y `YYYY-MM-DD` |
+
+Criterios de severidad:
+
+| Severidad | Criterio |
+| --- | --- |
+| Crítica | Acceso total no autorizado, creación de administradores o compromiso de secretos. |
+| Alta | Lectura o escritura de datos ajenos, escalada de roles o evasión de control de acceso. |
+| Media | Fuga de metadatos sensibles, stack traces o inconsistencia de idempotencia con impacto parcial. |
+| Baja | Validación laxa o ruido informativo sin acceso indebido directo. |
+
+La bitácora de referencia no registra hallazgos abiertos: todos los vectores fueron bloqueados. Si aparece un acceso indebido, se crea una fila `HAL-NN`, se detiene el vector y se completa la corrección antes de cerrar la sesión.
+
 ## Plantilla de bitácora durante el ataque (completar por intento)
 
 | Campo | Contenido |

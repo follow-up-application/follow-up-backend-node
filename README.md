@@ -97,3 +97,33 @@ Creados por `npm run db:seed` (solo en entornos que no sean producción). El log
 | Docente | `DOC-30222333-2024` | `30222333` | Debe cambiar la contraseña |
 | Alumno | `EST-40123456-2026` | `40123456` | Debe cambiar la contraseña |
 | Tutor | `laura@example.com` | `Tutor1234!` | El username es el email |
+
+## Colección Postman
+
+La colección está en `docs/postman/follow-up-api.postman_collection.json` (formato v2.1). No requiere un environment separado: todas las variables vienen precargadas en la colección.
+
+### Importar
+
+1. Postman → **Import** → **File** → seleccionar `docs/postman/follow-up-api.postman_collection.json`.
+2. Verificar que `baseUrl` sea `http://localhost:3000` (o el endpoint donde corre la API).
+3. No hay secretos reales: los tokens arrancan vacíos y las credenciales son las del seed local de la tabla anterior.
+
+### Ejecutar
+
+Con la API levantada (`npm run setup` y `npm run dev`), ejecutar los folders en este orden:
+
+1. `00 - Operativos`: `Health` y `Ready`.
+2. `01 - Autenticación y sesión`: `Login` (o su alias) con admin. Guarda `accessToken`/`refreshToken` y `adminAccessToken`/`adminRefreshToken`.
+3. `02 - Identidad` → `03 - Académico` → `04 - Asistencia` → `05 - Calificaciones y condiciones` → `06 - Importación CSV` → `07 - Auditoría`.
+4. `08 - Casos de error`: ejecutar al final; el caso 403 requiere `Login tutor (para 403)` y el 409 requiere Login admin previo y sus dos requests en orden.
+
+También se puede usar el **Collection Runner** seleccionando la colección completa; los scripts setean los IDs generados en las variables correspondientes.
+
+Para cambiar de rol, copiar `<rol>Username`/`<rol>Password` en `loginUsername`/`loginPassword` y ejecutar `Login` nuevamente. Los tokens por rol quedan en `<rol>AccessToken`/`<rol>RefreshToken`.
+
+### Puntos de atención
+
+- El script de pre-request genera una `Idempotency-Key` por request. Para repetir exactamente el mismo request, setear `reuseIdempotencyKey=true` y luego volver a `false`.
+- Para importar CSV, setear `csvPath` con una ruta local o seleccionar el archivo en el Body. `importIdempotencyKey` está explícita; cambiarla para importar otro archivo.
+- `tutorCodigo` apunta al código seed ya registrado. Para probar `POST /tutores/register`, setear `tutorCodigoRegistro` con un código pendiente.
+- Los casos de error tienen `pm.test` con asserts de 401, 403, 409 y 422.

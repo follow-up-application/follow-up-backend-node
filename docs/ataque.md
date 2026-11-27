@@ -20,6 +20,40 @@ Plantilla y bitácora para el ejercicio de seguridad donde cada grupo usa sus cr
 7. Ante un acceso indebido confirmado, se detiene el vector, se notifica al grupo defensor y al docente, y se conserva la evidencia.
 8. La colección Postman debe ejecutarse en orden; los casos de error van al final y requieren variables `reuseIdempotencyKey`, `importIdempotencyKey` y `tutorCodigoRegistro` ajustadas.
 
+## Matriz de ataque por rol y recurso
+
+La matriz asume un token válido del rol indicado contra un recurso ajeno del otro grupo. Cada celda indica `lectura / escritura`; en escritura se agrupan crear, actualizar, eliminar y acciones especiales.
+
+| Leyenda | Significado |
+| --- | --- |
+| `200`, `201`, `202`, `204` | Operación permitida por RBAC. |
+| `401` | Falta token válido. |
+| `403` | Rol sin permiso para la operación. |
+| `404` | Recurso ajeno fuera de alcance; bloquea IDOR. |
+| `(propio)` | Solo sobre el usuario/vínculo propio. |
+| `—` | No aplica. |
+
+| Recurso objetivo | Anónimo | Administrador | Preceptor | Docente | Alumno | Tutor |
+| --- | --- | --- | --- | --- | --- | --- |
+| Sesión protegida (`/me`, `/password`, `/auth/logout`) | `401 / 401` | `200 (propio) / 200 (propio)` | `200 (propio) / 200 (propio)` | `200 (propio) / 200 (propio)` | `200 (propio) / 200 (propio)` | `200 (propio) / 200 (propio)` |
+| Usuarios y administradores | `401 / 401` | `200 / 201` | `403 / 403` | `403 / 403` | `403 / 403` | `403 / 403` |
+| Alumnos | `401 / 401` | `200 / 201` | `404 / 403` | `404 / 403` | `404 / 403` | `404 / 403` |
+| Docentes | `401 / 401` | `200 / 201` | `200 / 403` | `404 (propio) / 403` | `403 / 403` | `403 / 403` |
+| Tutores y vínculos | `401 / 401` | `200 / 201` | `403 / 403` | `403 / 403` | `403 / 403` | `404 (propio) / 404 (propio)` |
+| Preceptores | `401 / 401` | `200 / 201` | `404 (propio) / 403` | `403 / 403` | `403 / 403` | `403 / 403` |
+| Cursos y materias | `401 / 401` | `200 / 201` | `200 / 403` | `200 / 403` | `200 / 403` | `200 / 403` |
+| Inscripciones | `401 / 401` | `200 / 201` | `403 / 403` | `404 / 404` | `404 / 403 (propio: 201)` | `404 / 403` |
+| Clases | `401 / 401` | `200 / 201` | `404 / 403` | `404 / 201` | `404 / 403` | `404 / 403` |
+| Asistencias | `401 / 401` | `200 / 201` | `404 / 404` | `404 / 404` | `404 / 403` | `404 / 403` |
+| Períodos y condiciones | `401 / 401` | `200 / 201` | `404 / 403` | `404 / 403` | `404 / 403` | `404 / 403` |
+| Instancias y calificaciones | `401 / 401` | `200 / 201` | `404 / 404` | `404 / 404` | `404 / 403` | `404 / 403` |
+| Importaciones CSV | `401 / 401` | `202 / 202` | `403 / 403` | `403 / 403` | `403 / 403` | `403 / 403` |
+| Auditoría | `401 / —` | `200 (todas) / —` | `200 (propias) / —` | `200 (propias) / —` | `200 (propias) / —` | `200 (propias) / —` |
+
+Notas: `login`, `refresh`, `validarCodigo` y `register` son públicos. En inscripciones, el preceptor recibe `403` al listar y `404` al consultar un id ajeno. En docentes, la matriz considera el detalle; `GET /docentes/:id/materias` es de lectura autenticada para todos los roles. `POST /calificaciones/:id/rectificar` es exclusivo de `administrador` (`403` para preceptor y docente aunque puedan cargar o anular). `GET /asistencias` sin filtros devuelve todas las asistencias; no usar ese atajo para inferir permisos por rol.
+
+Fuente: tabla de endpoints de `docs/api.md:830-1025` y asserts de `tests/security/access-control.test.ts:45-340`.
+
 ## Participantes
 
 | Rol en el ejercicio | Grupo | Responsable | `baseUrl` publicado | Credenciales usadas | Contacto |

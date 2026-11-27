@@ -54,6 +54,39 @@ Notas: `login`, `refresh`, `validarCodigo` y `register` son públicos. En inscri
 
 Fuente: tabla de endpoints de `docs/api.md:830-1025` y asserts de `tests/security/access-control.test.ts:45-340`.
 
+## Hipótesis
+
+| ID | Hipótesis | Validación |
+| --- | --- | --- |
+| H-AUT | Un atacante sin token o con token forjado, expirado o alterado no puede leer recursos protegidos. | Enviar pedidos sin `Authorization`, con JWT firmado con otro secreto, expirado y modificado; esperar `401 UNAUTHENTICATED`. |
+| H-REFRESH | La reutilización de un refresh token revela robo y revoca toda la familia. | Rotar el refresh, reutilizar el anterior y probar el nuevo; esperar `401 TOKEN_REUSE_DETECTED`. |
+| H-PWD | Un usuario con `must_change_password=true` solo puede acceder a `/me` y `/password`. | Consultar `/alumnos` con el token restringido; esperar `403 PASSWORD_CHANGE_REQUIRED`. |
+| H-IDOR | Un rol autorizado no puede leer ni modificar recursos ajenos al otro grupo o a otro usuario. | Usar los IDs del fixture ajeno en alumnos, calificaciones, inscripciones, asistencias, cursos y condición; esperar `404`. |
+| H-RBAC | Un rol sin permiso no puede ejecutar acciones exclusivas de otro rol. | Cerrar período, rectificar nota, importar CSV, listar usuarios y listar tutores; esperar `403`. |
+| H-HARD | La API no expone secretos ni trazas y rechaza entradas manipuladas. | Buscar `password_hash` y `$argon2`, enviar `__proto__`, SQLi y campos desconocidos; esperar `401` o `422` sin contaminar objetos globales. |
+| H-RL | El login limita la tasa de intentos fallidos desde la misma IP. | Enviar 6 intentos fallidos; esperar `429 RATE_LIMITED` con `Retry-After`. |
+
+## Evidencia
+
+Cada intento debe dejar evidencia reproducible y enlazada a su ID de bitácora:
+
+| Tipo | Qué capturar | Dónde |
+| --- | --- | --- |
+| Pedido | Método, URL completa, headers relevantes (`Authorization` enmascarado, `Idempotency-Key`, `X-Request-Id`) y body. | Postman/curl o `tests/security/access-control.test.ts`. |
+| Respuesta | Código HTTP, `error.code`, `requestId`, headers (`Retry-After`) y cuerpo sin secretos. | Captura o archivo de log. |
+| Contexto | Rol atacante, IP de origen, `baseUrl`, fecha/hora e IDs del fixture ajeno. | Bitácora. |
+| Estado global | Para prototype pollution, comprobar que `{}` no tenga `polluted`. | Assert o consola. |
+| Referencia | Líneas del test automatizado que cubren el vector. | Bitácora de referencia. |
+
+Los tokens se registran enmascarados: no pegar `refresh_token`, contraseñas ni secretos reales.
+
+## Resultado esperado
+
+- Éxito del ejercicio: cada intento obtiene el código descrito en la matriz y en la bitácora de referencia, sin accesos de lectura o escritura indebidos.
+- Fallo a investigar: `200`, `201`, `202` o `204` donde la matriz indica `401`, `403` o `404`; datos ajenos devueltos; `password_hash`, `$argon2` o stack traces en la respuesta.
+- Criterio de cierre: vector detenido, grupo defensor y docente notificados, evidencia conservada y fila de bitácora marcada como `Confirmado`, `no reproducido` o `mitigado`.
+- La corrida de referencia no registró accesos indebidos: ver la bitácora de referencia y los asserts de `tests/security/access-control.test.ts:45-340`.
+
 ## Participantes
 
 | Rol en el ejercicio | Grupo | Responsable | `baseUrl` publicado | Credenciales usadas | Contacto |
@@ -91,7 +124,7 @@ La suite reinicia la base de test en `tests/global-setup.ts`; no ejecutarla cont
 | ID | `AUT-01`, `IDOR-03`, etc. |
 | Fecha/hora | `YYYY-MM-DD HH:mm` |
 | Atacante -> Defensor | Grupo y responsable |
-| Objetivo | Que se intenta demostrar |
+| Hipótesis | Enunciado de `H-AUT`, `H-IDOR`, etc. |
 | Vector | Token, IDOR, rol, idempotencia, validación, etc. |
 | Método y ruta | `GET /api/v1/...` |
 | Actor/credencial | Usuario y token enmascarado |
